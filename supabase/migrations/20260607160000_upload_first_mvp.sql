@@ -21,6 +21,7 @@ drop table if exists public.extracted_booking_candidates cascade;
 drop table if exists public.extraction_jobs cascade;
 drop table if exists public.uploads cascade;
 drop table if exists public.travelers cascade;
+drop table if exists public."public.trips" cascade;
 drop table if exists public.trips cascade;
 drop table if exists public.profiles cascade;
 drop table if exists public.demo_trip_snapshots cascade;
