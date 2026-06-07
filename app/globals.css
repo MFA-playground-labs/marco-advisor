@@ -1,0 +1,38 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  --font-inter: Arial;
+  --font-newsreader: Georgia;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-height: 100%;
+  background: #f5f7fa;
+  color: #172232;
+}
+
+body {
+  margin: 0;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+.timeline-grid {
+  background-image:
+    linear-gradient(to right, rgba(125, 137, 153, 0.16) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(125, 137, 153, 0.12) 1px, transparent 1px);
+  background-size: 56px 100%, 100% 64px;
+}
