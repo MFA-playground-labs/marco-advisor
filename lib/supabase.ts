@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
+import type { Database } from "@/lib/database.types";
 import { getSupabasePublishableKey, getSupabaseUrl, hasSupabaseEnv } from "@/lib/supabase-env";
 
 export { hasSupabaseEnv };
@@ -10,7 +11,7 @@ export async function createSupabaseServerClient() {
   const supabaseUrl = getSupabaseUrl();
   const supabaseKey = getSupabasePublishableKey();
   const cookieStore = await cookies();
-  return createServerClient(
+  return createServerClient<Database>(
     supabaseUrl!,
     supabaseKey!,
     {
@@ -38,7 +39,7 @@ export function createSupabaseAdminClient() {
     return null;
   }
 
-  return createClient(supabaseUrl, process.env.SUPABASE_SERVICE_ROLE_KEY, {
+  return createClient<Database>(supabaseUrl, process.env.SUPABASE_SERVICE_ROLE_KEY, {
     auth: {
       autoRefreshToken: false,
       persistSession: false
