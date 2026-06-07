@@ -10,7 +10,7 @@ export async function POST(request: Request) {
   const {
     data: { user }
   } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Sign in is required before asking Marco." }, { status: 401 });
+  if (!user) return NextResponse.json({ error: "Anonymous Supabase auth must be enabled before asking Marco." }, { status: 401 });
 
   const body = await request.json();
   const question = String(body.question ?? "").trim();

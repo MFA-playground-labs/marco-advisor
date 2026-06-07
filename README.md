@@ -41,17 +41,9 @@ Upload-first travel intelligence for private trips. This MVP reconstructs the Ma
 
    Use the hosted Supabase SQL Editor for the connected project. This migration creates Marco's travel tables, RLS policies, and the private `trip-uploads` storage bucket. Do not use the generic Supabase `notes` table demo or public anonymous read policies for this app.
 
-4. Enable Supabase magic-link auth.
+4. Enable Supabase anonymous sign-ins.
 
-   Configure Supabase Auth with these redirect URLs:
-
-   ```text
-   http://localhost:3000/auth/callback
-   https://<your-vercel-preview-domain>/auth/callback
-   https://<your-production-domain>/auth/callback
-   ```
-
-   The app sends magic links through `/auth/callback?next=/dashboard`, exchanges the code server-side, refreshes the Supabase session in middleware, and protects the private app routes.
+   Marco creates a silent anonymous Supabase session in middleware. This removes the magic-link requirement while preserving RLS-backed `auth.uid()` ownership for uploads, trips, bookings, and scanner output. Anonymous user data remains tied to the browser session that created it.
 
 5. Run the app:
 
@@ -61,7 +53,7 @@ Upload-first travel intelligence for private trips. This MVP reconstructs the Ma
 
 ## MVP Flow
 
-1. Sign in at `/login`.
+1. Open `/dashboard` or `/upload`; Marco starts an anonymous Supabase session automatically.
 2. Upload a PDF, screenshot, text file, or exported email/document from `/upload`.
 3. Marco stores the original in the private `trip-uploads` bucket.
 4. OpenAI extracts booking candidates with a strict JSON schema.
@@ -81,9 +73,9 @@ No seeded trip data is included. Automated test fixtures are confined to tests a
 
 Manual Supabase verification:
 
-1. Sign in at `/login` with a magic link.
+1. Open `/dashboard` and confirm the app loads without a login prompt.
 2. Upload a PDF, screenshot, text file, or exported booking document.
 3. Confirm Supabase rows appear in `trips`, `uploads`, `extraction_jobs`, and `extracted_booking_candidates`.
 4. Accept a candidate and confirm `bookings` plus `booking_segments`.
 5. Run the scanner and confirm `trip_issues`.
-6. Check dashboard, bookings, and scanner pages render persisted Supabase data for the signed-in user.
+6. Check dashboard, bookings, and scanner pages render persisted Supabase data for the anonymous session.

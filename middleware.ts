@@ -2,7 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { getSupabasePublishableKey, getSupabaseUrl, hasSupabaseEnv } from "@/lib/supabase-env";
 
-const protectedPaths = [
+const appPaths = [
   "/",
   "/dashboard",
   "/bookings",
@@ -13,31 +13,26 @@ const protectedPaths = [
   "/upload"
 ];
 
+const apiPaths = [
+  "/api/candidates",
+  "/api/marco",
+  "/api/scanner",
+  "/api/trips",
+  "/api/upload"
+];
+
 type CookieToSet = {
   name: string;
   value: string;
   options?: Parameters<NextResponse["cookies"]["set"]>[2];
 };
 
-function isProtectedPath(pathname: string) {
-  return protectedPaths.some((path) => pathname === path || (path !== "/" && pathname.startsWith(`${path}/`)));
+function matchesPath(pathname: string, paths: string[]) {
+  return paths.some((path) => pathname === path || (path !== "/" && pathname.startsWith(`${path}/`)));
 }
 
-function redirectWithCookies(request: NextRequest, response: NextResponse, pathname: string) {
-  const redirectUrl = request.nextUrl.clone();
-  redirectUrl.pathname = pathname;
-  redirectUrl.search = "";
-
-  if (pathname === "/login") {
-    const next = `${request.nextUrl.pathname}${request.nextUrl.search}`;
-    redirectUrl.searchParams.set("next", next);
-  }
-
-  const redirectResponse = NextResponse.redirect(redirectUrl);
-  response.cookies.getAll().forEach((cookie) => {
-    redirectResponse.cookies.set(cookie);
-  });
-  return redirectResponse;
+function shouldUseAnonymousSession(pathname: string) {
+  return matchesPath(pathname, appPaths) || matchesPath(pathname, apiPaths);
 }
 
 export async function middleware(request: NextRequest) {
@@ -72,12 +67,8 @@ export async function middleware(request: NextRequest) {
     data: { user }
   } = await supabase.auth.getUser();
 
-  if (!user && isProtectedPath(request.nextUrl.pathname)) {
-    return redirectWithCookies(request, response, "/login");
-  }
-
-  if (user && request.nextUrl.pathname === "/login") {
-    return redirectWithCookies(request, response, "/dashboard");
+  if (!user && shouldUseAnonymousSession(request.nextUrl.pathname)) {
+    await supabase.auth.signInAnonymously();
   }
 
   return response;

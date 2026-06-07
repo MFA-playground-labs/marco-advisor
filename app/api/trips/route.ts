@@ -8,7 +8,7 @@ export async function POST(request: Request) {
   const {
     data: { user }
   } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Sign in is required." }, { status: 401 });
+  if (!user) return NextResponse.json({ error: "Anonymous Supabase auth must be enabled before creating trips." }, { status: 401 });
 
   const body = await request.json();
   const { data, error } = await supabase
