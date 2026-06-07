@@ -21,7 +21,7 @@ export default async function ScannerPage() {
       <PageHeader
         title="Scheduling Intelligence"
         eyebrow={`${snapshot.trip.name} · ${snapshot.issues.length} active issues`}
-        actions={<RunScannerButton />}
+        actions={snapshot.isDemo ? undefined : <RunScannerButton />}
       />
 
       <Card className="mb-6 p-5">

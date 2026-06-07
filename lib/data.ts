@@ -9,6 +9,8 @@ import type {
 import { createSupabaseServerClient } from "@/lib/supabase";
 import { calculateFinancialExposure, calculateReadiness } from "@/lib/scanner";
 
+const demoTripSlug = "marco-demo-trip";
+
 export async function getActiveTripSnapshot(): Promise<TripSnapshot> {
   const supabase = await createSupabaseServerClient();
   if (!supabase) return emptySnapshot();
@@ -17,7 +19,7 @@ export async function getActiveTripSnapshot(): Promise<TripSnapshot> {
     data: { user }
   } = await supabase.auth.getUser();
 
-  if (!user) return emptySnapshot();
+  if (!user) return loadDemoTripSnapshot(supabase);
 
   const { data: trip } = await supabase
     .from("trips")
@@ -27,7 +29,7 @@ export async function getActiveTripSnapshot(): Promise<TripSnapshot> {
     .limit(1)
     .maybeSingle();
 
-  if (!trip) return emptySnapshot();
+  if (!trip) return loadDemoTripSnapshot(supabase);
 
   const [travelers, bookings, segments, candidates, issues, uploads] = await Promise.all([
     supabase.from("travelers").select("*").eq("trip_id", trip.id).order("name"),
@@ -45,7 +47,33 @@ export async function getActiveTripSnapshot(): Promise<TripSnapshot> {
     segments: segments.data ?? [],
     candidates: (candidates.data ?? []) as ExtractedBookingCandidate[],
     issues: (issues.data ?? []) as TripIssue[],
-    uploads: (uploads.data ?? []) as UploadRecord[]
+    uploads: (uploads.data ?? []) as UploadRecord[],
+    isDemo: false
+  };
+}
+
+async function loadDemoTripSnapshot(supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>): Promise<TripSnapshot> {
+  if (!supabase) return emptySnapshot();
+
+  const { data, error } = await supabase
+    .from("demo_trip_snapshots")
+    .select("snapshot")
+    .eq("slug", demoTripSlug)
+    .maybeSingle();
+
+  if (error || !data?.snapshot) return emptySnapshot();
+
+  const snapshot = data.snapshot as Partial<TripSnapshot>;
+  return {
+    ...emptySnapshot(),
+    ...snapshot,
+    travelers: snapshot.travelers ?? [],
+    bookings: snapshot.bookings ?? [],
+    segments: snapshot.segments ?? [],
+    candidates: snapshot.candidates ?? [],
+    issues: snapshot.issues ?? [],
+    uploads: snapshot.uploads ?? [],
+    isDemo: true
   };
 }
 
@@ -57,7 +85,8 @@ export function emptySnapshot(): TripSnapshot {
     segments: [],
     candidates: [],
     issues: [],
-    uploads: []
+    uploads: [],
+    isDemo: false
   };
 }
 

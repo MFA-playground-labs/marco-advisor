@@ -142,4 +142,5 @@ export type TripSnapshot = {
   candidates: ExtractedBookingCandidate[];
   issues: TripIssue[];
   uploads: UploadRecord[];
+  isDemo: boolean;
 };

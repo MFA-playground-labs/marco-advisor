@@ -34,10 +34,11 @@ export default function SettingsPage() {
         <Card className="p-5">
           <h2 className="font-display text-2xl font-bold">Runtime Behavior</h2>
           <div className="mt-4 space-y-3 text-sm leading-6 text-slate-600">
-            <p>No seeded data is rendered in the app.</p>
+            <p>A read-only public demo trip is shown until the current session creates private trip data.</p>
             <p>Magic links are disabled; middleware creates anonymous Supabase sessions automatically.</p>
             <p>Uploads create extraction candidates first; candidates require review before becoming bookings.</p>
             <p>Scanner output is derived from confirmed bookings and saved as trip issues.</p>
+            <p>Private trips, uploads, bookings, candidates, and scanner issues are isolated by Supabase RLS.</p>
             <p>{hasSupabaseEnv() ? "Supabase client is available." : "Supabase env is missing, so pages render empty-state previews."}</p>
           </div>
         </Card>
