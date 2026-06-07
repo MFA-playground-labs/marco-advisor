@@ -6,6 +6,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const supabase = await createSupabaseServerClient();
   if (!supabase) return NextResponse.json({ error: "Supabase is not configured." }, { status: 500 });
 
+  const {
+    data: { user }
+  } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Sign in is required before reviewing candidates." }, { status: 401 });
+
   const formData = await request.formData();
   const intent = String(formData.get("intent") ?? "");
 
@@ -17,8 +22,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   if (error || !candidate) return NextResponse.json({ error: error?.message ?? "Candidate not found." }, { status: 404 });
 
+  if (!candidate.trip_id) return NextResponse.json({ error: "Candidate is missing a trip." }, { status: 400 });
+
   if (intent === "reject") {
-    await supabase.from("extracted_booking_candidates").update({ status: "rejected" }).eq("id", id);
+    const rejected = await supabase.from("extracted_booking_candidates").update({ status: "rejected" }).eq("id", id);
+    if (rejected.error) return NextResponse.json({ error: rejected.error.message }, { status: 400 });
     return NextResponse.redirect(new URL("/bookings", request.url), { status: 303 });
   }
 
@@ -51,7 +59,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   if (inserted.error) return NextResponse.json({ error: inserted.error.message }, { status: 400 });
 
-  await supabase.from("booking_segments").insert({
+  const segment = await supabase.from("booking_segments").insert({
     booking_id: inserted.data.id,
     trip_id: candidate.trip_id,
     type: candidate.booking_type,
@@ -62,8 +70,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     destination: null,
     location: candidate.location
   });
+  if (segment.error) return NextResponse.json({ error: segment.error.message }, { status: 400 });
 
-  await supabase.from("extracted_booking_candidates").update({ status: "accepted" }).eq("id", id);
+  const accepted = await supabase.from("extracted_booking_candidates").update({ status: "accepted" }).eq("id", id);
+  if (accepted.error) return NextResponse.json({ error: accepted.error.message }, { status: 400 });
 
   return NextResponse.redirect(new URL("/bookings", request.url), { status: 303 });
 }

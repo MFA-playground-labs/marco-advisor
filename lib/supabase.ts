@@ -19,7 +19,11 @@ export async function createSupabaseServerClient() {
         },
         setAll(cookiesToSet: Array<{ name: string; value: string; options: Parameters<typeof cookieStore.set>[2] }>) {
           cookiesToSet.forEach(({ name, value, options }) => {
-            cookieStore.set(name, value, options);
+            try {
+              cookieStore.set(name, value, options);
+            } catch {
+              // Server Components cannot set cookies; middleware refreshes sessions before rendering.
+            }
           });
         }
       }

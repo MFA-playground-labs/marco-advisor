@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { UploadCloud } from "lucide-react";
 import { AlertNote, Card } from "@/components/ui";
 
 export function UploadPanel() {
+  const router = useRouter();
   const [status, setStatus] = useState<string>("");
   const [busy, setBusy] = useState(false);
 
@@ -23,6 +25,7 @@ export function UploadPanel() {
       if (!response.ok) throw new Error(payload.error ?? "Upload failed");
       setStatus("Extraction started. Review candidates will appear after processing.");
       event.currentTarget.reset();
+      router.refresh();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Upload failed");
     } finally {

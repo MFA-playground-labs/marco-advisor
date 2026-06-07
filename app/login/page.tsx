@@ -14,10 +14,13 @@ export default function LoginPage() {
       setMessage("Supabase environment variables are missing.");
       return;
     }
+    const params = new URLSearchParams(window.location.search);
+    const requestedNext = params.get("next") ?? "/dashboard";
+    const next = requestedNext.startsWith("/") && !requestedNext.startsWith("//") ? requestedNext : "/dashboard";
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: {
-        emailRedirectTo: `${window.location.origin}/dashboard`
+        emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`
       }
     });
     setMessage(error ? error.message : "Check your email for a Marco sign-in link.");
