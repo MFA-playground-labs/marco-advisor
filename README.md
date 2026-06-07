@@ -28,12 +28,14 @@ Upload-first travel intelligence for private trips. This MVP reconstructs the Ma
 
    ```bash
    NEXT_PUBLIC_SUPABASE_URL=...
-   NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+   NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=...
    OPENAI_API_KEY=...
    OPENAI_EXTRACTION_MODEL=gpt-4.1-mini
    OPENAI_ADVISOR_MODEL=gpt-4.1-mini
    SUPABASE_SERVICE_ROLE_KEY=... # optional; only needed for admin/server-only jobs
    ```
+
+   Older Supabase projects may expose `NEXT_PUBLIC_SUPABASE_ANON_KEY`; the app supports either `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` or `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
 
 3. Apply Marco's Supabase migration in `supabase/migrations/20260607160000_upload_first_mvp.sql`.
 
