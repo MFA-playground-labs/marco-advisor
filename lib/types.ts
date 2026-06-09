@@ -3,6 +3,7 @@ export type BookingStatus = "pending_review" | "confirmed" | "cancelled" | "reje
 export type IssueSeverity = "critical" | "high" | "medium" | "low";
 export type IssueStatus = "unresolved" | "in_progress" | "resolved" | "risk_accepted" | "dismissed";
 export type ExtractionJobStatus = "queued" | "processing" | "succeeded" | "failed";
+export type ExtractionMethod = "rules" | "haiku" | "manual";
 
 export type Trip = {
   id: string;
@@ -72,9 +73,26 @@ export type ExtractionJob = {
   upload_id: string;
   trip_id: string | null;
   status: ExtractionJobStatus;
+  provider?: string;
+  model?: string | null;
   error_message: string | null;
+  warnings?: string[];
+  raw_result?: unknown;
   created_at?: string;
+  started_at?: string | null;
   completed_at?: string | null;
+};
+
+export type UploadPageText = {
+  id: string;
+  upload_id: string;
+  trip_id: string | null;
+  job_id: string;
+  page_number: number;
+  text: string;
+  char_count: number;
+  extraction_confidence: number | null;
+  created_at?: string;
 };
 
 export type ExtractedBookingCandidate = {
@@ -96,6 +114,10 @@ export type ExtractedBookingCandidate = {
   confirmation_code: string | null;
   confidence: number;
   missing_fields: string[];
+  source_job_id?: string | null;
+  source_pages?: number[];
+  source_snippets?: string[];
+  extraction_method?: ExtractionMethod;
   raw_json: unknown;
 };
 
@@ -143,4 +165,9 @@ export type TripSnapshot = {
   issues: TripIssue[];
   uploads: UploadRecord[];
   isDemo: boolean;
+};
+
+export type PipelineSnapshot = TripSnapshot & {
+  jobs: ExtractionJob[];
+  pages: UploadPageText[];
 };

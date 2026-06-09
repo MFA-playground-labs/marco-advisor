@@ -7,6 +7,7 @@ const appPaths = [
   "/dashboard",
   "/bookings",
   "/itinerary",
+  "/pipeline",
   "/timeline",
   "/scanner",
   "/settings",
@@ -15,6 +16,7 @@ const appPaths = [
 
 const apiPaths = [
   "/api/candidates",
+  "/api/extractions",
   "/api/marco",
   "/api/scanner",
   "/api/trips",

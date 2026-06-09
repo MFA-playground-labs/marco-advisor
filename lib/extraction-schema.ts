@@ -15,6 +15,9 @@ export const extractedBookingSchema = z.object({
   confirmation_code: z.string().nullable().default(null),
   confidence: z.number().min(0).max(1).default(0.5),
   missing_fields: z.array(z.string()).default([]),
+  source_pages: z.array(z.number().int().positive()).default([]),
+  source_snippets: z.array(z.string()).default([]),
+  extraction_method: z.enum(["rules", "haiku", "manual"]).default("haiku"),
   notes: z.string().nullable().default(null)
 });
 
@@ -72,6 +75,9 @@ export const extractionJsonSchema = {
             "confirmation_code",
             "confidence",
             "missing_fields",
+            "source_pages",
+            "source_snippets",
+            "extraction_method",
             "notes"
           ],
           properties: {
@@ -89,6 +95,9 @@ export const extractionJsonSchema = {
             confirmation_code: { type: ["string", "null"] },
             confidence: { type: "number" },
             missing_fields: { type: "array", items: { type: "string" } },
+            source_pages: { type: "array", items: { type: "number" } },
+            source_snippets: { type: "array", items: { type: "string" } },
+            extraction_method: { type: "string", enum: ["rules", "haiku", "manual"] },
             notes: { type: ["string", "null"] }
           }
         }

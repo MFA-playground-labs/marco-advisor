@@ -1,4 +1,4 @@
-import type { TripSnapshot } from "@/lib/types";
+import type { PipelineSnapshot, TripSnapshot } from "@/lib/types";
 import { createSupabaseServerClient } from "@/lib/supabase";
 import { calculateFinancialExposure, calculateReadiness } from "@/lib/scanner";
 import { createSupabaseRepository } from "@/lib/server/supabase-repository";
@@ -15,6 +15,18 @@ export async function getActiveTripSnapshot(): Promise<TripSnapshot> {
   const snapshot = await repo.getTripSnapshotForUser(user);
 
   return snapshot ?? loadDemoTripSnapshot(repo);
+}
+
+export async function getPipelineSnapshot(): Promise<PipelineSnapshot> {
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) return emptyPipelineSnapshot();
+  const repo = createSupabaseRepository(supabase);
+
+  const user = await repo.getCurrentUser();
+  if (!user) return emptyPipelineSnapshot();
+
+  const snapshot = await repo.getPipelineSnapshotForUser(user);
+  return snapshot ?? emptyPipelineSnapshot();
 }
 
 async function loadDemoTripSnapshot(repo: ReturnType<typeof createSupabaseRepository>): Promise<TripSnapshot> {
@@ -43,6 +55,14 @@ export function emptySnapshot(): TripSnapshot {
     issues: [],
     uploads: [],
     isDemo: false
+  };
+}
+
+export function emptyPipelineSnapshot(): PipelineSnapshot {
+  return {
+    ...emptySnapshot(),
+    jobs: [],
+    pages: []
   };
 }
 

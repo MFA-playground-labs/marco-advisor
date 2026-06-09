@@ -2,11 +2,13 @@ import { describe, expect, it, vi } from "vitest";
 import type { ExtractionResult } from "@/lib/extraction-schema";
 import { bookingInsertFromCandidate } from "@/lib/domain/booking-mapping";
 import { validateUploadFile } from "@/lib/domain/upload";
+import { requireExtractionWebhookAuth } from "@/lib/server/extraction-auth";
 import type { UploadEvidenceDeps } from "@/lib/server/workflows/upload-evidence";
 import { uploadEvidence } from "@/lib/server/workflows/upload-evidence";
+import { completeExtraction } from "@/lib/server/workflows/complete-extraction";
 import { reviewCandidate } from "@/lib/server/workflows/review-candidate";
 import { runTripScan } from "@/lib/server/workflows/run-trip-scan";
-import type { Booking, ExtractedBookingCandidate, Trip, UploadRecord } from "@/lib/types";
+import type { Booking, ExtractedBookingCandidate, ExtractionJob, Trip, UploadRecord } from "@/lib/types";
 
 const user = { id: "user-1" };
 const trip: Trip = {
@@ -24,7 +26,17 @@ const upload: UploadRecord = {
   filename: "booking.txt",
   content_type: "text/plain",
   storage_path: "user-1/upload.txt",
-  status: "extracting"
+  status: "uploaded"
+};
+const job: ExtractionJob = {
+  id: "job-1",
+  upload_id: upload.id,
+  trip_id: trip.id,
+  status: "queued",
+  provider: "n8n",
+  model: "claude-haiku",
+  error_message: null,
+  warnings: []
 };
 
 function textFile(name = "booking.txt") {
@@ -56,6 +68,9 @@ function extractionResult(overrides: Partial<ExtractionResult> = {}): Extraction
         confirmation_code: "ABC123",
         confidence: 0.9,
         missing_fields: [],
+        source_pages: [],
+        source_snippets: [],
+        extraction_method: "rules",
         notes: null
       }
     ],
@@ -73,11 +88,9 @@ function uploadRepo(overrides: Partial<UploadEvidenceDeps["repo"]> = {}): Upload
     uploadFile: vi.fn().mockResolvedValue(undefined),
     removeUploadedFile: vi.fn().mockResolvedValue(undefined),
     createUploadRecord: vi.fn().mockResolvedValue(upload),
-    createExtractionJob: vi.fn().mockResolvedValue({ id: "job-1", upload_id: upload.id, trip_id: trip.id, status: "processing" }),
+    createExtractionJob: vi.fn().mockResolvedValue(job),
     markUploadStatus: vi.fn().mockResolvedValue(undefined),
     markExtractionJob: vi.fn().mockResolvedValue(undefined),
-    upsertTravelers: vi.fn().mockResolvedValue(undefined),
-    createCandidates: vi.fn().mockResolvedValue(undefined),
     ...overrides
   };
 }
@@ -114,35 +127,116 @@ describe("upload domain helpers", () => {
 });
 
 describe("uploadEvidence", () => {
-  it("persists extracted candidates and marks upload/job succeeded", async () => {
+  it("stores the upload, creates a queued job, and dispatches it", async () => {
     const repo = uploadRepo();
-    const extract = vi.fn().mockResolvedValue(extractionResult());
+    const dispatch = vi.fn().mockResolvedValue({ ok: true });
 
     await expect(
-      uploadEvidence({ file: textFile(), tripName: "Italy", destination: "Italy", startsOn: "", endsOn: "" }, { repo, extract })
-    ).resolves.toEqual({ upload, candidates: 1 });
+      uploadEvidence({ file: textFile(), tripName: "Italy", destination: "Italy", startsOn: "", endsOn: "" }, { repo, dispatch })
+    ).resolves.toEqual({ upload, job, dispatched: true });
 
     expect(repo.uploadFile).toHaveBeenCalledOnce();
-    expect(repo.createCandidates).toHaveBeenCalledWith([
-      expect.objectContaining({ status: "needs_review", title: "Masseria Il Frantoio" })
-    ]);
-    expect(repo.markUploadStatus).toHaveBeenCalledWith(upload.id, "review_ready");
-    expect(repo.markExtractionJob).toHaveBeenCalledWith("job-1", expect.objectContaining({ status: "succeeded" }));
+    expect(repo.createUploadRecord).toHaveBeenCalledWith(expect.objectContaining({ status: "uploaded" }));
+    expect(repo.createExtractionJob).toHaveBeenCalledWith(expect.objectContaining({ status: "queued", provider: "n8n", model: "claude-haiku" }));
+    expect(dispatch).toHaveBeenCalledWith({ jobId: job.id, uploadId: upload.id, tripId: trip.id });
   });
 
-  it("marks upload and extraction job failed when extraction fails", async () => {
+  it("keeps the upload queued and records a warning when n8n dispatch fails", async () => {
     const repo = uploadRepo();
-    const extract = vi.fn().mockRejectedValue(new Error("OPENAI_API_KEY is required for extraction."));
+    const dispatch = vi.fn().mockResolvedValue({ ok: false, warning: "n8n unavailable" });
 
     await expect(
-      uploadEvidence({ file: textFile(), tripName: "Italy", destination: "Italy", startsOn: "", endsOn: "" }, { repo, extract })
-    ).rejects.toThrow("OPENAI_API_KEY is required for extraction.");
+      uploadEvidence({ file: textFile(), tripName: "Italy", destination: "Italy", startsOn: "", endsOn: "" }, { repo, dispatch })
+    ).resolves.toEqual({ upload, job, dispatched: false });
+
+    expect(repo.markExtractionJob).toHaveBeenCalledWith(
+      job.id,
+      expect.objectContaining({ error_message: "n8n unavailable", warnings: ["n8n unavailable"] })
+    );
+  });
+});
+
+describe("extraction callback", () => {
+  it("rejects missing or invalid webhook secrets", () => {
+    const previous = process.env.EXTRACTION_WEBHOOK_SECRET;
+    process.env.EXTRACTION_WEBHOOK_SECRET = "secret";
+
+    expect(() => requireExtractionWebhookAuth(new Request("https://example.com"))).toThrow("Invalid extraction webhook secret");
+    expect(() =>
+      requireExtractionWebhookAuth(
+        new Request("https://example.com", {
+          headers: { Authorization: "Bearer wrong" }
+        })
+      )
+    ).toThrow("Invalid extraction webhook secret");
+
+    process.env.EXTRACTION_WEBHOOK_SECRET = previous;
+  });
+
+  it("writes pages and candidates from a valid callback payload", async () => {
+    const repo = {
+      getExtractionJobWithUpload: vi.fn().mockResolvedValue({ ...job, upload }),
+      replaceUploadPages: vi.fn().mockResolvedValue(undefined),
+      updateTrip: vi.fn().mockResolvedValue(undefined),
+      upsertTravelers: vi.fn().mockResolvedValue(undefined),
+      createCandidates: vi.fn().mockResolvedValue(undefined),
+      markUploadStatus: vi.fn().mockResolvedValue(undefined),
+      markExtractionJob: vi.fn().mockResolvedValue(undefined)
+    };
+
+    await expect(
+      completeExtraction(repo, {
+        job_id: job.id,
+        status: "succeeded",
+        provider: "n8n",
+        model: "claude-haiku",
+        pages: [{ page_number: 1, text: "Hotel confirmation ABC123", extraction_confidence: 0.91 }],
+        ...extractionResult({
+          bookings: [
+            {
+              ...extractionResult().bookings[0],
+              confidence: 0.6,
+              source_pages: [1],
+              source_snippets: ["Hotel confirmation ABC123"],
+              extraction_method: "haiku"
+            }
+          ]
+        })
+      })
+    ).resolves.toEqual({ status: "succeeded", candidates: 1 });
+
+    expect(repo.replaceUploadPages).toHaveBeenCalledWith([
+      expect.objectContaining({ job_id: job.id, page_number: 1, char_count: 25 })
+    ]);
+    expect(repo.createCandidates).toHaveBeenCalledWith([
+      expect.objectContaining({ status: "needs_review", source_job_id: job.id, confidence: 0.6, extraction_method: "haiku" })
+    ]);
+    expect(repo.markUploadStatus).toHaveBeenCalledWith(upload.id, "review_ready");
+  });
+
+  it("marks jobs and uploads failed when n8n reports extraction failure", async () => {
+    const repo = {
+      getExtractionJobWithUpload: vi.fn().mockResolvedValue({ ...job, upload }),
+      replaceUploadPages: vi.fn().mockResolvedValue(undefined),
+      updateTrip: vi.fn().mockResolvedValue(undefined),
+      upsertTravelers: vi.fn().mockResolvedValue(undefined),
+      createCandidates: vi.fn().mockResolvedValue(undefined),
+      markUploadStatus: vi.fn().mockResolvedValue(undefined),
+      markExtractionJob: vi.fn().mockResolvedValue(undefined)
+    };
+
+    await expect(
+      completeExtraction(repo, {
+        job_id: job.id,
+        status: "failed",
+        warnings: ["No extractable text"],
+        error_message: "No extractable text"
+      })
+    ).resolves.toEqual({ status: "failed", candidates: 0 });
 
     expect(repo.markUploadStatus).toHaveBeenCalledWith(upload.id, "failed");
-    expect(repo.markExtractionJob).toHaveBeenCalledWith(
-      "job-1",
-      expect.objectContaining({ status: "failed", error_message: "OPENAI_API_KEY is required for extraction." })
-    );
+    expect(repo.markExtractionJob).toHaveBeenCalledWith(job.id, expect.objectContaining({ status: "failed", error_message: "No extractable text" }));
+    expect(repo.createCandidates).not.toHaveBeenCalled();
   });
 });
 

@@ -10,6 +10,7 @@ import {
   Gauge,
   LayoutDashboard,
   ListChecks,
+  Workflow,
   Settings,
   Upload,
   Menu,
@@ -25,6 +26,7 @@ const navItems = [
   { href: "/timeline", label: "Timeline", icon: CalendarDays },
   { href: "/scanner", label: "Scanner", icon: AlertTriangle },
   { href: "/upload", label: "Upload", icon: Upload },
+  { href: "/pipeline", label: "Pipeline", icon: Workflow },
   { href: "/settings", label: "Settings", icon: Settings }
 ];
 

@@ -4,11 +4,14 @@ import type { createSupabaseServerClient } from "@/lib/supabase";
 import type {
   Booking,
   BookingSegment,
+  ExtractionJob,
   ExtractedBookingCandidate,
+  PipelineSnapshot,
   Trip,
   TripIssue,
   TripSnapshot,
   Traveler,
+  UploadPageText,
   UploadRecord
 } from "@/lib/types";
 import { WorkflowError } from "@/lib/server/errors";
@@ -88,6 +91,12 @@ export function createSupabaseRepository(supabase: AppSupabaseClient) {
       if (error) dbError(error.message);
     },
 
+    async createSignedUploadUrl(storagePath: string, expiresIn = 300) {
+      const { data, error } = await supabase.storage.from("trip-uploads").createSignedUrl(storagePath, expiresIn);
+      if (error) dbError(error.message);
+      return requireData(data?.signedUrl ? data : null, null);
+    },
+
     async createUploadRecord(input: TablesInsert<"uploads">) {
       const { data, error } = await db.from("uploads").insert(input).select("*").single();
       return requireData(data as UploadRecord | null, error);
@@ -106,6 +115,25 @@ export function createSupabaseRepository(supabase: AppSupabaseClient) {
     async markExtractionJob(id: string, input: TablesUpdate<"extraction_jobs">) {
       const { error } = await db.from("extraction_jobs").update(input).eq("id", id);
       if (error) dbError(error.message);
+    },
+
+    async getExtractionJobWithUpload(id: string) {
+      const { data, error } = await db
+        .from("extraction_jobs")
+        .select("*, upload:uploads(*)")
+        .eq("id", id)
+        .single();
+      if (error) dbError(error.message, 404);
+      return requireData(data as (ExtractionJob & { upload: UploadRecord }) | null, error, 404);
+    },
+
+    async replaceUploadPages(pages: TablesInsert<"upload_pages">[]) {
+      if (pages.length === 0) return;
+      const jobId = pages[0].job_id;
+      const deleted = await db.from("upload_pages").delete().eq("job_id", jobId);
+      if (deleted.error) dbError(deleted.error.message);
+      const inserted = await db.from("upload_pages").insert(pages);
+      if (inserted.error) dbError(inserted.error.message);
     },
 
     async upsertTravelers(tripId: string, ownerId: string, names: string[]) {
@@ -195,6 +223,22 @@ export function createSupabaseRepository(supabase: AppSupabaseClient) {
         uploads: listData(uploads.data as UploadRecord[] | null, uploads.error),
         isDemo: false
       } satisfies TripSnapshot;
+    },
+
+    async getPipelineSnapshotForUser(user: User): Promise<PipelineSnapshot | null> {
+      const snapshot = await this.getTripSnapshotForUser(user);
+      if (!snapshot || !snapshot.trip) return null;
+
+      const [jobs, pages] = await Promise.all([
+        db.from("extraction_jobs").select("*").eq("trip_id", snapshot.trip.id).order("created_at", { ascending: false }),
+        db.from("upload_pages").select("*").eq("trip_id", snapshot.trip.id).order("page_number")
+      ]);
+
+      return {
+        ...snapshot,
+        jobs: listData(jobs.data as ExtractionJob[] | null, jobs.error),
+        pages: listData(pages.data as UploadPageText[] | null, pages.error)
+      } satisfies PipelineSnapshot;
     }
   };
 }

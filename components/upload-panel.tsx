@@ -23,7 +23,7 @@ export function UploadPanel() {
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error ?? "Upload failed");
-      setStatus("Extraction started. Review candidates will appear after processing.");
+      setStatus("Extraction queued. Review candidates will appear after n8n processes the document.");
       event.currentTarget.reset();
       router.refresh();
     } catch (error) {
@@ -40,14 +40,14 @@ export function UploadPanel() {
           <UploadCloud className="mx-auto text-slate-400" size={40} />
           <h2 className="mt-4 font-display text-3xl font-bold">Upload trip evidence</h2>
           <p className="mx-auto mt-2 max-w-2xl text-sm leading-6 text-slate-500">
-            Add PDFs, booking screenshots, exported email files, text documents, or HTML confirmations. Marco stores the original,
-            extracts candidates, and waits for your review before creating bookings.
+            Add digital PDFs, text documents, or HTML confirmations. Marco stores the original, queues extraction, and waits for
+            your review before creating bookings.
           </p>
           <input
             className="mt-6 block w-full rounded-lg border border-line bg-white p-3 text-sm"
             type="file"
             name="file"
-            accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,.html,.htm,.doc,.docx,application/pdf,image/png,image/jpeg,image/webp,text/plain,text/html"
+            accept=".pdf,.txt,.html,.htm,application/pdf,text/plain,text/html"
             required
           />
         </div>
@@ -74,7 +74,7 @@ export function UploadPanel() {
         {status && <AlertNote>{status}</AlertNote>}
 
         <button disabled={busy} className="rounded-lg bg-ink px-5 py-3 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-60">
-          {busy ? "Processing..." : "Upload and extract"}
+          {busy ? "Queueing..." : "Upload and queue"}
         </button>
       </form>
     </Card>
