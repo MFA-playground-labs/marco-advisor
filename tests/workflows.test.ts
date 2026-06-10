@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import type { ExtractionResult } from "@/lib/extraction-schema";
 import { bookingInsertFromCandidate } from "@/lib/domain/booking-mapping";
 import { validateUploadFile } from "@/lib/domain/upload";
+import { errorMessage, asyncExtractionMigrationMessage } from "@/lib/server/errors";
 import { requireExtractionWebhookAuth } from "@/lib/server/extraction-auth";
+import { createSupabaseRepository } from "@/lib/server/supabase-repository";
 import type { UploadEvidenceDeps } from "@/lib/server/workflows/upload-evidence";
 import { uploadEvidence } from "@/lib/server/workflows/upload-evidence";
 import { completeExtraction } from "@/lib/server/workflows/complete-extraction";
@@ -153,6 +155,94 @@ describe("uploadEvidence", () => {
       job.id,
       expect.objectContaining({ error_message: "n8n unavailable", warnings: ["n8n unavailable"] })
     );
+  });
+
+  it("returns a migration warning when extraction job creation falls back to the old schema", async () => {
+    const repo = uploadRepo({
+      createExtractionJob: vi.fn().mockResolvedValue({ ...job, migration_warning: asyncExtractionMigrationMessage })
+    });
+    const dispatch = vi.fn().mockResolvedValue({ ok: true });
+
+    await expect(
+      uploadEvidence({ file: textFile(), tripName: "Italy", destination: "Italy", startsOn: "", endsOn: "" }, { repo, dispatch })
+    ).resolves.toEqual({ upload, job: { ...job, migration_warning: asyncExtractionMigrationMessage }, dispatched: true, warning: asyncExtractionMigrationMessage });
+  });
+
+  it("does not write the new warnings column when fallback schema is detected", async () => {
+    const fallbackJob = { ...job, migration_warning: asyncExtractionMigrationMessage };
+    const repo = uploadRepo({
+      createExtractionJob: vi.fn().mockResolvedValue(fallbackJob)
+    });
+    const dispatch = vi.fn().mockResolvedValue({ ok: false, warning: "n8n unavailable" });
+
+    await uploadEvidence({ file: textFile(), tripName: "Italy", destination: "Italy", startsOn: "", endsOn: "" }, { repo, dispatch });
+
+    expect(repo.markExtractionJob).toHaveBeenCalledWith(job.id, { error_message: "n8n unavailable" });
+  });
+});
+
+describe("workflow error messages", () => {
+  it("turns Supabase async extraction schema cache errors into a migration message", () => {
+    expect(errorMessage(new Error("Could not find the 'model' column of 'extraction_jobs' in the schema cache"))).toBe(
+      asyncExtractionMigrationMessage
+    );
+  });
+});
+
+describe("supabase repository", () => {
+  it("retries extraction job creation with the old schema when async metadata is missing", async () => {
+    const inserted: unknown[] = [];
+    const supabase = {
+      from(table: string) {
+        return {
+          insert(input: unknown) {
+            inserted.push({ table, input });
+            return {
+              select() {
+                return {
+                  async single() {
+                    if (inserted.length === 1) {
+                      return {
+                        data: null,
+                        error: {
+                          message: "Could not find the 'model' column of 'extraction_jobs' in the schema cache"
+                        }
+                      };
+                    }
+                    return {
+                      data: job,
+                      error: null
+                    };
+                  }
+                };
+              }
+            };
+          }
+        };
+      }
+    };
+
+    const repo = createSupabaseRepository(supabase as any);
+    await expect(
+      repo.createExtractionJob({
+        upload_id: upload.id,
+        trip_id: trip.id,
+        status: "queued",
+        provider: "n8n",
+        model: "claude-haiku"
+      })
+    ).resolves.toEqual({ ...job, migration_warning: asyncExtractionMigrationMessage });
+
+    expect(inserted).toEqual([
+      {
+        table: "extraction_jobs",
+        input: expect.objectContaining({ provider: "n8n", model: "claude-haiku" })
+      },
+      {
+        table: "extraction_jobs",
+        input: { upload_id: upload.id, trip_id: trip.id, status: "queued" }
+      }
+    ]);
   });
 });
 

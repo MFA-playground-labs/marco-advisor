@@ -42,3 +42,5 @@ on public.upload_pages for all
 to authenticated
 using (exists (select 1 from public.trips t where t.id = trip_id and t.owner_id = auth.uid()))
 with check (exists (select 1 from public.trips t where t.id = trip_id and t.owner_id = auth.uid()));
+
+select pg_notify('pgrst', 'reload schema');

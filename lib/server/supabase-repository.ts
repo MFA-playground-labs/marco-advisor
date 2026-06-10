@@ -14,7 +14,11 @@ import type {
   UploadPageText,
   UploadRecord
 } from "@/lib/types";
-import { WorkflowError } from "@/lib/server/errors";
+import {
+  WorkflowError,
+  asyncExtractionMigrationMessage,
+  isAsyncExtractionSchemaCacheError
+} from "@/lib/server/errors";
 
 export type AppSupabaseClient = NonNullable<Awaited<ReturnType<typeof createSupabaseServerClient>>>;
 
@@ -109,6 +113,19 @@ export function createSupabaseRepository(supabase: AppSupabaseClient) {
 
     async createExtractionJob(input: TablesInsert<"extraction_jobs">) {
       const { data, error } = await db.from("extraction_jobs").insert(input).select("*").single();
+      if (isAsyncExtractionSchemaCacheError(error?.message)) {
+        const minimalInput = {
+          upload_id: input.upload_id,
+          trip_id: input.trip_id,
+          status: input.status
+        };
+        const fallback = await db.from("extraction_jobs").insert(minimalInput).select("*").single();
+        const job = requireData(fallback.data as Tables<"extraction_jobs"> | null, fallback.error);
+        return {
+          ...job,
+          migration_warning: asyncExtractionMigrationMessage
+        } as Tables<"extraction_jobs"> & { migration_warning: string };
+      }
       return requireData(data as Tables<"extraction_jobs"> | null, error);
     },
 

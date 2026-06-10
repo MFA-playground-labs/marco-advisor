@@ -23,7 +23,7 @@ export function UploadPanel() {
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error ?? "Upload failed");
-      setStatus("Extraction queued. Review candidates will appear after n8n processes the document.");
+      setStatus(payload.warning ?? "Extraction queued. Review candidates will appear after n8n processes the document.");
       event.currentTarget.reset();
       router.refresh();
     } catch (error) {

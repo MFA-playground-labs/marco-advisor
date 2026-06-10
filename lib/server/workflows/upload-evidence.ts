@@ -56,6 +56,7 @@ export async function uploadEvidence(input: UploadEvidenceInput, deps: UploadEvi
   let storagePath: string | null = createUploadStoragePath(user.id, input.file.name);
   let upload: UploadRecord | null = null;
   let job: Tables<"extraction_jobs"> | null = null;
+  let migrationWarning: string | null = null;
 
   try {
     await repo.uploadFile(storagePath, input.file, input.file.type);
@@ -74,16 +75,27 @@ export async function uploadEvidence(input: UploadEvidenceInput, deps: UploadEvi
       provider: process.env.EXTRACTION_PROVIDER ?? "n8n",
       model: process.env.EXTRACTION_FALLBACK_MODEL ?? "claude-haiku"
     });
+    migrationWarning = "migration_warning" in job ? String(job.migration_warning) : null;
 
     const dispatched = await dispatch({ jobId: job.id, uploadId: upload.id, tripId: trip.id });
     if (!dispatched.ok && dispatched.warning) {
-      await repo.markExtractionJob(job.id, {
-        error_message: dispatched.warning,
-        warnings: [dispatched.warning]
-      });
+      await repo.markExtractionJob(
+        job.id,
+        migrationWarning
+          ? { error_message: dispatched.warning }
+          : {
+              error_message: dispatched.warning,
+              warnings: [dispatched.warning]
+            }
+      );
     }
 
-    return { upload, job, dispatched: dispatched.ok };
+    return {
+      upload,
+      job,
+      dispatched: dispatched.ok,
+      ...(migrationWarning ? { warning: migrationWarning } : {})
+    };
   } catch (error) {
     const message = errorMessage(error, "Extraction failed.");
     if (upload) {
