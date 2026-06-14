@@ -18,6 +18,19 @@ Feature specs describe intended future behavior. The current application behavio
 | [Extraction Pipeline Reliability](extraction-pipeline-reliability.md) | Ready | Make async extraction job states, failures, retries, and visibility decision-complete. |
 | [Extraction Review Quality](extraction-review-quality.md) | Ready | Improve candidate review confidence, source evidence, and post-review behavior. |
 
+## Page-Organized Specs
+
+Use page specs when feature work is primarily experienced through one app screen. Existing cross-cutting feature specs remain valid and are linked from their owning page roadmaps.
+
+- [Dashboard page specs](../pages/dashboard/README.md)
+- [Bookings page specs](../pages/bookings/README.md)
+- [Upload page specs](../pages/upload/README.md)
+- [Pipeline page specs](../pages/pipeline/README.md)
+- [Scanner page specs](../pages/scanner/README.md)
+- [Timeline page specs](../pages/timeline/README.md)
+- [Itinerary page specs](../pages/itinerary/README.md)
+- [Settings page specs](../pages/settings/README.md)
+
 ## Related Catalog Sections
 
 - [Upload API](../../docs/specification-catalog.md#post-apiupload)

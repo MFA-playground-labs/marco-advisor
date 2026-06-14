@@ -34,6 +34,19 @@ Use specs in this order:
 - [Extraction Pipeline Reliability](features/extraction-pipeline-reliability.md)
 - [Extraction Review Quality](features/extraction-review-quality.md)
 
+## Page-Organized Specs
+
+Page specs organize feature work around the screens users actually use. Start at [pages/README.md](pages/README.md), then open the page folder that owns the workflow you are changing.
+
+- [Dashboard](pages/dashboard/README.md)
+- [Bookings](pages/bookings/README.md)
+- [Upload](pages/upload/README.md)
+- [Pipeline](pages/pipeline/README.md)
+- [Scanner](pages/scanner/README.md)
+- [Timeline](pages/timeline/README.md)
+- [Itinerary](pages/itinerary/README.md)
+- [Settings](pages/settings/README.md)
+
 ## Working Rules
 
 - A feature spec is not ready for implementation until every acceptance criterion maps to a test, manual verification step, or explicit product decision.

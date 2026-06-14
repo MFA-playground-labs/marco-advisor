@@ -3,8 +3,28 @@ export const maxUploadBytes = 25 * 1024 * 1024;
 export const supportedUploadTypes = new Set([
   "application/pdf",
   "text/plain",
-  "text/html"
+  "text/html",
+  "image/png",
+  "image/jpeg",
+  "image/webp"
 ]);
+
+export const uploadAccept = [
+  ".pdf",
+  ".txt",
+  ".html",
+  ".htm",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".webp",
+  "application/pdf",
+  "text/plain",
+  "text/html",
+  "image/png",
+  "image/jpeg",
+  "image/webp"
+].join(",");
 
 export type UploadFileLike = Pick<File, "name" | "size" | "type">;
 
