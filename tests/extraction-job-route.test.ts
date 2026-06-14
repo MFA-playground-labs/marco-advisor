@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExtractionJob, UploadRecord } from "@/lib/types";
 
 const mocks = vi.hoisted(() => ({
@@ -49,9 +49,15 @@ function params() {
 }
 
 describe("GET /api/extractions/jobs/[id]", () => {
+  const previousSecret = process.env.EXTRACTION_WEBHOOK_SECRET;
+
   beforeEach(() => {
     vi.clearAllMocks();
     process.env.EXTRACTION_WEBHOOK_SECRET = "secret";
+  });
+
+  afterEach(() => {
+    process.env.EXTRACTION_WEBHOOK_SECRET = previousSecret;
   });
 
   it("returns 401 for invalid worker auth without touching Supabase", async () => {
