@@ -1,5 +1,5 @@
 import type { User } from "@supabase/supabase-js";
-import type { Tables, TablesInsert, TablesUpdate } from "@/lib/database.types";
+import type { Json, Tables, TablesInsert, TablesUpdate } from "@/lib/database.types";
 import type { createSupabaseServerClient } from "@/lib/supabase";
 import type {
   Booking,
@@ -22,6 +22,27 @@ import {
 
 export type AppSupabaseClient = NonNullable<Awaited<ReturnType<typeof createSupabaseServerClient>>>;
 
+export type ClaimedExtractionJob = ExtractionJob & { upload: UploadRecord; claimed: boolean };
+
+export type CompleteExtractionJobInput = {
+  jobId: string;
+  status: "succeeded" | "failed";
+  pages: Json;
+  trip: Json;
+  bookings: Json;
+  warnings: string[];
+  provider: string;
+  model: string | null;
+  errorMessage: string | null;
+  rawResult: Json;
+};
+
+export type CompleteExtractionJobResult = {
+  status: "succeeded" | "failed";
+  candidates: number;
+  duplicate: boolean;
+};
+
 const demoTripSlug = "marco-demo-trip";
 
 function dbError(message: string | undefined, status = 400): never {
@@ -37,6 +58,34 @@ function requireData<T>(data: T | null, error: { message: string } | null, statu
 function listData<T>(data: T[] | null, error: { message: string } | null): T[] {
   if (error) dbError(error.message);
   return data ?? [];
+}
+
+function claimedExtractionJobFromRpc(row: any): ClaimedExtractionJob {
+  return {
+    id: row.id,
+    upload_id: row.upload_id,
+    trip_id: row.trip_id,
+    status: row.status,
+    provider: row.provider,
+    model: row.model,
+    error_message: row.error_message,
+    warnings: row.warnings ?? [],
+    raw_result: row.raw_result ?? {},
+    created_at: row.created_at,
+    started_at: row.started_at,
+    completed_at: row.completed_at,
+    claimed: Boolean(row.claimed),
+    upload: {
+      id: row.upload_id,
+      owner_id: row.upload_owner_id,
+      trip_id: row.upload_trip_id,
+      filename: row.upload_filename,
+      content_type: row.upload_content_type,
+      storage_path: row.upload_storage_path,
+      status: row.upload_status,
+      created_at: row.upload_created_at
+    }
+  };
 }
 
 export function createSupabaseRepository(supabase: AppSupabaseClient) {
@@ -132,6 +181,37 @@ export function createSupabaseRepository(supabase: AppSupabaseClient) {
     async markExtractionJob(id: string, input: TablesUpdate<"extraction_jobs">) {
       const { error } = await db.from("extraction_jobs").update(input).eq("id", id);
       if (error) dbError(error.message);
+    },
+
+    async claimExtractionJob(id: string) {
+      const { data, error } = await db.rpc("claim_extraction_job", { input_job_id: id }).single();
+      return claimedExtractionJobFromRpc(requireData(data, error, 404));
+    },
+
+    async completeExtractionJob(input: CompleteExtractionJobInput): Promise<CompleteExtractionJobResult> {
+      const { data, error } = await db
+        .rpc("complete_extraction_job", {
+          input_job_id: input.jobId,
+          input_status: input.status,
+          input_pages: input.pages,
+          input_trip: input.trip,
+          input_bookings: input.bookings,
+          input_warnings: input.warnings,
+          input_provider: input.provider,
+          input_model: input.model,
+          input_error_message: input.errorMessage,
+          input_raw_result: input.rawResult
+        })
+        .single();
+      const result = requireData(data as CompleteExtractionJobResult | null, error);
+      if (result.status !== "succeeded" && result.status !== "failed") {
+        dbError("Unexpected extraction completion status returned from Supabase.");
+      }
+      return {
+        status: result.status,
+        candidates: Number(result.candidates ?? 0),
+        duplicate: Boolean(result.duplicate)
+      };
     },
 
     async getExtractionJobWithUpload(id: string) {
