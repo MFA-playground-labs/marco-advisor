@@ -219,9 +219,9 @@ begin
         updated_at = completed_time;
   end loop;
 
-  delete from public.extracted_booking_candidates
-  where source_job_id = job_row.id
-    and status = 'needs_review';
+  delete from public.extracted_booking_candidates ebc
+  where ebc.source_job_id = job_row.id
+    and ebc.status = 'needs_review';
 
   for booking in
     select value
@@ -319,5 +319,98 @@ revoke all on function public.complete_extraction_job(uuid, text, jsonb, jsonb, 
 
 grant execute on function public.claim_extraction_job(uuid) to service_role;
 grant execute on function public.complete_extraction_job(uuid, text, jsonb, jsonb, jsonb, text[], text, text, text, jsonb) to service_role;
+
+create or replace function public.set_updated_at()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+drop policy if exists "profiles owner access" on public.profiles;
+create policy "profiles owner access"
+on public.profiles for all
+to authenticated
+using (id = (select auth.uid()))
+with check (id = (select auth.uid()));
+
+drop policy if exists "trips owner access" on public.trips;
+create policy "trips owner access"
+on public.trips for all
+to authenticated
+using (owner_id = (select auth.uid()))
+with check (owner_id = (select auth.uid()));
+
+drop policy if exists "travelers trip owner access" on public.travelers;
+create policy "travelers trip owner access"
+on public.travelers for all
+to authenticated
+using (
+  owner_id = (select auth.uid())
+  and exists (select 1 from public.trips t where t.id = trip_id and t.owner_id = (select auth.uid()))
+)
+with check (
+  owner_id = (select auth.uid())
+  and exists (select 1 from public.trips t where t.id = trip_id and t.owner_id = (select auth.uid()))
+);
+
+drop policy if exists "uploads trip owner access" on public.uploads;
+create policy "uploads trip owner access"
+on public.uploads for all
+to authenticated
+using (
+  owner_id = (select auth.uid())
+  and exists (select 1 from public.trips t where t.id = trip_id and t.owner_id = (select auth.uid()))
+)
+with check (
+  owner_id = (select auth.uid())
+  and exists (select 1 from public.trips t where t.id = trip_id and t.owner_id = (select auth.uid()))
+);
+
+drop policy if exists "extraction jobs trip owner access" on public.extraction_jobs;
+create policy "extraction jobs trip owner access"
+on public.extraction_jobs for all
+to authenticated
+using (exists (select 1 from public.trips t where t.id = trip_id and t.owner_id = (select auth.uid())))
+with check (exists (select 1 from public.trips t where t.id = trip_id and t.owner_id = (select auth.uid())));
+
+drop policy if exists "candidates trip owner access" on public.extracted_booking_candidates;
+create policy "candidates trip owner access"
+on public.extracted_booking_candidates for all
+to authenticated
+using (exists (select 1 from public.trips t where t.id = trip_id and t.owner_id = (select auth.uid())))
+with check (exists (select 1 from public.trips t where t.id = trip_id and t.owner_id = (select auth.uid())));
+
+drop policy if exists "bookings trip owner access" on public.bookings;
+create policy "bookings trip owner access"
+on public.bookings for all
+to authenticated
+using (exists (select 1 from public.trips t where t.id = trip_id and t.owner_id = (select auth.uid())))
+with check (exists (select 1 from public.trips t where t.id = trip_id and t.owner_id = (select auth.uid())));
+
+drop policy if exists "segments trip owner access" on public.booking_segments;
+create policy "segments trip owner access"
+on public.booking_segments for all
+to authenticated
+using (exists (select 1 from public.trips t where t.id = trip_id and t.owner_id = (select auth.uid())))
+with check (exists (select 1 from public.trips t where t.id = trip_id and t.owner_id = (select auth.uid())));
+
+drop policy if exists "issues trip owner access" on public.trip_issues;
+create policy "issues trip owner access"
+on public.trip_issues for all
+to authenticated
+using (exists (select 1 from public.trips t where t.id = trip_id and t.owner_id = (select auth.uid())))
+with check (exists (select 1 from public.trips t where t.id = trip_id and t.owner_id = (select auth.uid())));
+
+drop policy if exists "upload pages trip owner access" on public.upload_pages;
+create policy "upload pages trip owner access"
+on public.upload_pages for all
+to authenticated
+using (exists (select 1 from public.trips t where t.id = trip_id and t.owner_id = (select auth.uid())))
+with check (exists (select 1 from public.trips t where t.id = trip_id and t.owner_id = (select auth.uid())));
 
 select pg_notify('pgrst', 'reload schema');
