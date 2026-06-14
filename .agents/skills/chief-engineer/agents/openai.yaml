@@ -1,4 +1,4 @@
 interface:
   display_name: "Chief Engineer"
   short_description: "Startup-grade code execution and review"
-  default_prompt: "Use -engineer to implement or review this change with startup-grade engineering standards."
+  default_prompt: "Use $chief-engineer to implement or review this change with startup-grade engineering standards."
