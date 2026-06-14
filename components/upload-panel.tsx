@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { UploadCloud } from "lucide-react";
 import { AlertNote, Card } from "@/components/ui";
+import { uploadAccept } from "@/lib/domain/upload";
 
 export function UploadPanel() {
   const router = useRouter();
@@ -13,7 +14,7 @@ export function UploadPanel() {
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
-    setStatus("Uploading document...");
+    setStatus("Uploading evidence...");
     const formData = new FormData(event.currentTarget);
 
     try {
@@ -23,7 +24,7 @@ export function UploadPanel() {
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error ?? "Upload failed");
-      setStatus(payload.warning ?? "Extraction queued. Review candidates will appear after n8n processes the document.");
+      setStatus(payload.warning ?? "Extraction queued. Review candidates will appear after n8n processes the evidence.");
       event.currentTarget.reset();
       router.refresh();
     } catch (error) {
@@ -40,14 +41,14 @@ export function UploadPanel() {
           <UploadCloud className="mx-auto text-slate-400" size={40} />
           <h2 className="mt-4 font-display text-3xl font-bold">Upload trip evidence</h2>
           <p className="mx-auto mt-2 max-w-2xl text-sm leading-6 text-slate-500">
-            Add digital PDFs, text documents, or HTML confirmations. Marco stores the original, queues extraction, and waits for
-            your review before creating bookings.
+            Add PDFs, text/HTML confirmations, or screenshots. Marco stores the original, queues extraction, and waits for your
+            review before creating bookings.
           </p>
           <input
             className="mt-6 block w-full rounded-lg border border-line bg-white p-3 text-sm"
             type="file"
             name="file"
-            accept=".pdf,.txt,.html,.htm,application/pdf,text/plain,text/html"
+            accept={uploadAccept}
             required
           />
         </div>

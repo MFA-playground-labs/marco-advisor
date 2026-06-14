@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ExtractionResult } from "@/lib/extraction-schema";
 import { bookingInsertFromCandidate } from "@/lib/domain/booking-mapping";
-import { validateUploadFile } from "@/lib/domain/upload";
+import { confidenceCategory, sourceSnippetPreview } from "@/lib/domain/review-quality";
+import { maxUploadBytes, validateUploadFile } from "@/lib/domain/upload";
 import { errorMessage, asyncExtractionMigrationMessage } from "@/lib/server/errors";
 import { requireExtractionWebhookAuth } from "@/lib/server/extraction-auth";
 import { createSupabaseRepository } from "@/lib/server/supabase-repository";
@@ -43,6 +44,10 @@ const job: ExtractionJob = {
 
 function textFile(name = "booking.txt") {
   return new File(["Hotel confirmation"], name, { type: "text/plain" });
+}
+
+function imageFile(name = "booking.png", type = "image/png") {
+  return new File(["screenshot"], name, { type });
 }
 
 function extractionResult(overrides: Partial<ExtractionResult> = {}): ExtractionResult {
@@ -126,6 +131,21 @@ describe("upload domain helpers", () => {
   it("rejects unsupported files before workflow side effects", () => {
     expect(validateUploadFile(new File(["x"], "booking.csv", { type: "text/csv" }))).toContain("Unsupported file type");
   });
+
+  it("accepts first-wave image evidence types", () => {
+    expect(validateUploadFile(imageFile("booking.png", "image/png"))).toBeNull();
+    expect(validateUploadFile(imageFile("booking.jpg", "image/jpeg"))).toBeNull();
+    expect(validateUploadFile(imageFile("booking.webp", "image/webp"))).toBeNull();
+  });
+
+  it("rejects unsupported and oversized images", () => {
+    expect(validateUploadFile(imageFile("booking.heic", "image/heic"))).toContain("Unsupported file type");
+    expect(validateUploadFile(imageFile("booking.svg", "image/svg+xml"))).toContain("Unsupported file type");
+    expect(validateUploadFile(imageFile("booking.gif", "image/gif"))).toContain("Unsupported file type");
+    expect(validateUploadFile(imageFile("booking.bmp", "image/bmp"))).toContain("Unsupported file type");
+    expect(validateUploadFile(new File(["x"], "booking", { type: "" }))).toContain("Unsupported file type");
+    expect(validateUploadFile({ name: "big.png", type: "image/png", size: maxUploadBytes + 1 })).toContain("File is too large");
+  });
 });
 
 describe("uploadEvidence", () => {
@@ -140,6 +160,25 @@ describe("uploadEvidence", () => {
     expect(repo.uploadFile).toHaveBeenCalledOnce();
     expect(repo.createUploadRecord).toHaveBeenCalledWith(expect.objectContaining({ status: "uploaded" }));
     expect(repo.createExtractionJob).toHaveBeenCalledWith(expect.objectContaining({ status: "queued", provider: "n8n", model: "claude-haiku" }));
+    expect(dispatch).toHaveBeenCalledWith({ jobId: job.id, uploadId: upload.id, tripId: trip.id });
+  });
+
+  it("sends image evidence through the same upload workflow and dispatch shape", async () => {
+    const repo = uploadRepo({
+      createUploadRecord: vi.fn().mockResolvedValue({ ...upload, filename: "booking.png", content_type: "image/png" })
+    });
+    const dispatch = vi.fn().mockResolvedValue({ ok: true });
+
+    await expect(
+      uploadEvidence({ file: imageFile(), tripName: "Italy", destination: "Italy", startsOn: "", endsOn: "" }, { repo, dispatch })
+    ).resolves.toEqual({
+      upload: { ...upload, filename: "booking.png", content_type: "image/png" },
+      job,
+      dispatched: true
+    });
+
+    expect(repo.uploadFile).toHaveBeenCalledWith(expect.stringMatching(/^user-1\/.*-booking\.png$/), expect.any(File), "image/png");
+    expect(repo.createUploadRecord).toHaveBeenCalledWith(expect.objectContaining({ filename: "booking.png", content_type: "image/png" }));
     expect(dispatch).toHaveBeenCalledWith({ jobId: job.id, uploadId: upload.id, tripId: trip.id });
   });
 
@@ -347,6 +386,65 @@ describe("reviewCandidate", () => {
     expect(repo.createBooking).toHaveBeenCalledWith(expect.objectContaining({ title: source.title, source_upload_id: source.upload_id }));
     expect(repo.createBookingSegment).toHaveBeenCalledWith(expect.objectContaining({ booking_id: "booking-1", trip_id: trip.id }));
     expect(repo.markCandidateStatus).toHaveBeenCalledWith(source.id, "accepted");
+  });
+
+  it("accepts incomplete candidates without blocking on missing fields", async () => {
+    const source = candidate({ starts_at: null, ends_at: null, missing_fields: ["starts_at", "ends_at"] });
+    const repo = {
+      requireUser: vi.fn().mockResolvedValue(user),
+      getCandidate: vi.fn().mockResolvedValue(source),
+      markCandidateStatus: vi.fn().mockResolvedValue(undefined),
+      createBooking: vi.fn().mockResolvedValue({ id: "booking-1" }),
+      createBookingSegment: vi.fn().mockResolvedValue(undefined)
+    };
+
+    await expect(reviewCandidate(repo, source.id, "accept")).resolves.toEqual({ status: "accepted", booking: { id: "booking-1" } });
+    expect(repo.createBooking).toHaveBeenCalledWith(expect.objectContaining({ missing_fields: ["starts_at", "ends_at"] }));
+    expect(repo.markCandidateStatus).toHaveBeenCalledWith(source.id, "accepted");
+  });
+
+  it("rejects candidates without creating booking records", async () => {
+    const repo = {
+      requireUser: vi.fn().mockResolvedValue(user),
+      getCandidate: vi.fn(),
+      markCandidateStatus: vi.fn().mockResolvedValue(undefined),
+      createBooking: vi.fn(),
+      createBookingSegment: vi.fn()
+    };
+
+    await expect(reviewCandidate(repo, "candidate-1", "reject")).resolves.toEqual({ status: "rejected" });
+    expect(repo.markCandidateStatus).toHaveBeenCalledWith("candidate-1", "rejected");
+    expect(repo.getCandidate).not.toHaveBeenCalled();
+    expect(repo.createBooking).not.toHaveBeenCalled();
+    expect(repo.createBookingSegment).not.toHaveBeenCalled();
+  });
+
+  it("rejects unsupported candidate actions without mutation", async () => {
+    const repo = {
+      requireUser: vi.fn().mockResolvedValue(user),
+      getCandidate: vi.fn(),
+      markCandidateStatus: vi.fn(),
+      createBooking: vi.fn(),
+      createBookingSegment: vi.fn()
+    };
+
+    await expect(reviewCandidate(repo, "candidate-1", "archive")).rejects.toThrow("Unsupported candidate action.");
+    expect(repo.markCandidateStatus).not.toHaveBeenCalled();
+    expect(repo.createBooking).not.toHaveBeenCalled();
+  });
+});
+
+describe("review quality helpers", () => {
+  it("categorizes confidence with spec thresholds", () => {
+    expect(confidenceCategory(0.85)).toEqual({ label: "high", tone: "green" });
+    expect(confidenceCategory(0.7)).toEqual({ label: "review", tone: "gold" });
+    expect(confidenceCategory(0.69)).toEqual({ label: "low", tone: "red" });
+  });
+
+  it("caps source snippet previews", () => {
+    expect(sourceSnippetPreview(["  Short source  "])).toBe("Short source");
+    expect(sourceSnippetPreview(["x".repeat(230)])).toHaveLength(220);
+    expect(sourceSnippetPreview(["", "   "])).toBeNull();
   });
 });
 

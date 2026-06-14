@@ -13,5 +13,5 @@ export function sourceSnippetPreview(snippets: string[] | undefined, maxLength =
   const snippet = snippets?.find((item) => item.trim().length > 0)?.trim();
   if (!snippet) return null;
   if (snippet.length <= maxLength) return snippet;
-  return `${snippet.slice(0, Math.max(0, maxLength - 1)).trimEnd()}...`;
+  return `${snippet.slice(0, Math.max(0, maxLength - 3)).trimEnd()}...`;
 }

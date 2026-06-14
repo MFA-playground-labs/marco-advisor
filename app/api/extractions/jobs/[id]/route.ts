@@ -17,19 +17,23 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
     const repo = createSupabaseRepository(supabase as any);
     const job = await repo.getExtractionJobWithUpload(id);
+    let responseJob = job;
     if (job.status === "queued") {
-      await repo.markExtractionJob(job.id, { status: "processing", started_at: new Date().toISOString() });
+      const startedAt = new Date().toISOString();
+      await repo.markExtractionJob(job.id, { status: "processing", started_at: startedAt });
+      responseJob = { ...job, status: "processing", started_at: startedAt };
     }
 
     return NextResponse.json({
       job: {
-        id: job.id,
-        upload_id: job.upload_id,
-        trip_id: job.trip_id,
-        status: job.status,
-        provider: job.provider,
-        model: job.model,
-        warnings: job.warnings ?? []
+        id: responseJob.id,
+        upload_id: responseJob.upload_id,
+        trip_id: responseJob.trip_id,
+        status: responseJob.status,
+        provider: responseJob.provider,
+        model: responseJob.model,
+        started_at: responseJob.started_at ?? null,
+        warnings: responseJob.warnings ?? []
       },
       upload: {
         id: job.upload.id,

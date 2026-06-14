@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Card, EmptyState, PageHeader, StatusPill } from "@/components/ui";
 import { getPipelineSnapshot } from "@/lib/data";
+import { confidenceCategory } from "@/lib/domain/review-quality";
 
 export default async function PipelinePage() {
   const snapshot = await getPipelineSnapshot();
@@ -9,7 +10,7 @@ export default async function PipelinePage() {
     return (
       <>
         <PageHeader title="Pipeline" eyebrow="Upload, extraction, review, and booking flow" />
-        <EmptyState title="No pipeline data yet" description="Upload a digital PDF or text confirmation to create an extraction job." />
+        <EmptyState title="No pipeline data yet" description="Upload evidence to create an extraction job." />
       </>
     );
   }
@@ -62,6 +63,8 @@ export default async function PipelinePage() {
                       ) : (
                         jobs.map((job) => {
                           const pages = snapshot.pages.filter((page) => page.job_id === job.id);
+                          const jobCandidates = candidates.filter((candidate) => candidate.source_job_id === job.id);
+                          const warnings = job.warnings ?? [];
                           return (
                             <div key={job.id} className="rounded-lg border border-line p-3">
                               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -71,8 +74,21 @@ export default async function PipelinePage() {
                                 <span className="text-xs font-bold text-slate-500">{job.provider ?? "n8n"}</span>
                               </div>
                               <p className="mt-2 break-all text-xs text-slate-500">{job.id}</p>
-                              <p className="mt-2 text-sm text-slate-600">{pages.length} extracted pages</p>
-                              {job.error_message && <p className="mt-2 text-sm font-semibold text-red-600">{job.error_message}</p>}
+                              <p className="mt-2 text-sm text-slate-600">
+                                {pages.length} extracted pages · {jobCandidates.length} candidates
+                              </p>
+                              {job.error_message && (
+                                <p className={job.status === "failed" ? "mt-2 text-sm font-semibold text-red-600" : "mt-2 text-sm font-semibold text-amber-700"}>
+                                  {job.error_message}
+                                </p>
+                              )}
+                              {warnings.length > 0 && (
+                                <ul className="mt-2 space-y-1 text-sm font-semibold text-amber-700">
+                                  {warnings.map((warning) => (
+                                    <li key={warning}>{warning}</li>
+                                  ))}
+                                </ul>
+                              )}
                             </div>
                           );
                         })
@@ -86,23 +102,26 @@ export default async function PipelinePage() {
                       {candidates.length === 0 ? (
                         <p className="text-sm text-slate-500">No candidates yet.</p>
                       ) : (
-                        candidates.map((candidate) => (
-                          <div key={candidate.id} className="rounded-lg border border-line p-3">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <StatusPill tone={candidate.status === "accepted" ? "green" : candidate.status === "rejected" ? "red" : "gold"}>
-                                {candidate.status.replace("_", " ")}
-                              </StatusPill>
-                              <StatusPill tone={candidate.confidence >= 0.85 ? "green" : "red"}>
-                                {Math.round(candidate.confidence * 100)}%
-                              </StatusPill>
+                        candidates.map((candidate) => {
+                          const confidence = confidenceCategory(candidate.confidence);
+                          return (
+                            <div key={candidate.id} className="rounded-lg border border-line p-3">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <StatusPill tone={candidate.status === "accepted" ? "green" : candidate.status === "rejected" ? "red" : "gold"}>
+                                  {candidate.status.replace("_", " ")}
+                                </StatusPill>
+                                <StatusPill tone={confidence.tone}>
+                                  {confidence.label} · {Math.round(candidate.confidence * 100)}%
+                                </StatusPill>
+                              </div>
+                              <h4 className="mt-2 font-black">{candidate.title}</h4>
+                              <p className="mt-1 text-sm text-slate-500">{candidate.vendor ?? "Vendor TBD"}</p>
+                              {candidate.source_pages && candidate.source_pages.length > 0 && (
+                                <p className="mt-2 text-xs font-bold text-slate-500">Pages {candidate.source_pages.join(", ")}</p>
+                              )}
                             </div>
-                            <h4 className="mt-2 font-black">{candidate.title}</h4>
-                            <p className="mt-1 text-sm text-slate-500">{candidate.vendor ?? "Vendor TBD"}</p>
-                            {candidate.source_pages && candidate.source_pages.length > 0 && (
-                              <p className="mt-2 text-xs font-bold text-slate-500">Pages {candidate.source_pages.join(", ")}</p>
-                            )}
-                          </div>
-                        ))
+                          );
+                        })
                       )}
                     </div>
                   </div>

@@ -1,6 +1,7 @@
 import type { Booking, ExtractedBookingCandidate } from "@/lib/types";
 import { Card, StatusPill } from "@/components/ui";
 import { dateRange, money } from "@/lib/utils";
+import { confidenceCategory, sourceSnippetPreview } from "@/lib/domain/review-quality";
 
 export function BookingCard({ booking }: { booking: Booking }) {
   const tone = booking.status === "confirmed" ? "green" : booking.status === "cancelled" ? "slate" : "gold";
@@ -30,6 +31,9 @@ export function BookingCard({ booking }: { booking: Booking }) {
 }
 
 export function CandidateCard({ candidate }: { candidate: ExtractedBookingCandidate }) {
+  const confidence = confidenceCategory(candidate.confidence);
+  const snippet = sourceSnippetPreview(candidate.source_snippets);
+
   return (
     <Card className="border-amber-200 p-5">
       <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
@@ -37,10 +41,21 @@ export function CandidateCard({ candidate }: { candidate: ExtractedBookingCandid
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="text-lg font-black">{candidate.title}</h3>
             <StatusPill tone="gold">needs review</StatusPill>
-            <StatusPill tone={candidate.confidence >= 0.75 ? "green" : "red"}>{Math.round(candidate.confidence * 100)}% confidence</StatusPill>
+            <StatusPill tone={confidence.tone}>
+              {confidence.label} · {Math.round(candidate.confidence * 100)}%
+            </StatusPill>
           </div>
           <p className="mt-1 text-sm font-semibold text-slate-500">{candidate.vendor ?? "Vendor TBD"}</p>
           <p className="mt-2 text-sm text-slate-600">{dateRange(candidate.starts_at, candidate.ends_at)} · {candidate.location ?? "Location TBD"}</p>
+          <p className="mt-2 text-sm font-black">{money(candidate.total_amount, candidate.currency ?? "EUR")}</p>
+          {candidate.source_pages && candidate.source_pages.length > 0 && (
+            <p className="mt-3 text-xs font-bold uppercase tracking-normal text-slate-500">Pages {candidate.source_pages.join(", ")}</p>
+          )}
+          {snippet && (
+            <blockquote className="mt-2 border-l-4 border-amber-200 pl-3 text-sm leading-6 text-slate-600">
+              {snippet}
+            </blockquote>
+          )}
           {candidate.missing_fields.length > 0 && (
             <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-700">
               Missing: {candidate.missing_fields.join(", ")}
