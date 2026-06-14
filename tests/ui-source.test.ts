@@ -15,6 +15,35 @@ describe("UI source contracts", () => {
     expect(source("components/upload-panel.tsx")).toContain("accept={uploadAccept}");
   });
 
+  it("captures the upload form before async work and avoids async event currentTarget reset", () => {
+    const uploadPanel = source("components/upload-panel.tsx");
+
+    expect(uploadPanel).toContain("const form = event.currentTarget");
+    expect(uploadPanel).toContain("const formData = new FormData(form)");
+    expect(uploadPanel).toContain("form.reset()");
+    expect(uploadPanel).not.toContain("event.currentTarget.reset()");
+    expect(uploadPanel).toContain("X-Marco-Upload-Interaction-Id");
+  });
+
+  it("keeps upload observability wired through client and server workflow milestones", () => {
+    const uploadPanel = source("components/upload-panel.tsx");
+    const uploadRoute = source("app/api/upload/route.ts");
+    const uploadWorkflow = source("lib/server/workflows/upload-evidence.ts");
+
+    expect(uploadPanel).toContain("marco.upload_submit_started");
+    expect(uploadPanel).toContain("marco.upload_submit_succeeded");
+    expect(uploadPanel).toContain("marco.upload_submit_failed");
+    expect(uploadPanel).toContain("marco.upload_ui_cleanup_failed");
+    expect(uploadRoute).toContain("marco.upload_request_received");
+    expect(uploadRoute).toContain("marco.upload_validation_failed");
+    expect(uploadWorkflow).toContain("marco.upload_storage_completed");
+    expect(uploadWorkflow).toContain("marco.upload_record_created");
+    expect(uploadWorkflow).toContain("marco.upload_extraction_job_created");
+    expect(uploadWorkflow).toContain("marco.upload_dispatch_completed");
+    expect(uploadWorkflow).toContain("marco.upload_dispatch_failed");
+    expect(uploadWorkflow).toContain("marco.upload_workflow_failed");
+  });
+
   it("shows candidate evidence context in the review card", () => {
     const bookingCard = source("components/booking-card.tsx");
 

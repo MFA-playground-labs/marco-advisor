@@ -32,11 +32,28 @@ export type UploadEvidenceDeps = {
     | "markExtractionJob"
   >;
   dispatch?: typeof dispatchExtractionJob;
+  observability?: {
+    interactionId?: string;
+  };
 };
 
 export async function uploadEvidence(input: UploadEvidenceInput, deps: UploadEvidenceDeps) {
+  const startedAt = Date.now();
+  const logContext = {
+    interaction_id: deps.observability?.interactionId,
+    content_type: input.file.type || "application/octet-stream",
+    file_extension: fileExtension(input.file.name),
+    size_bytes: input.file.size
+  };
   const validationError = validateUploadFile(input.file);
-  if (validationError) throw new WorkflowError(validationError, 400);
+  if (validationError) {
+    console.warn("marco.upload_validation_failed", {
+      ...logContext,
+      reason: validationError,
+      duration_ms: elapsedMs(startedAt)
+    });
+    throw new WorkflowError(validationError, 400);
+  }
 
   const repo = deps.repo;
   const dispatch = deps.dispatch ?? dispatchExtractionJob;
@@ -57,9 +74,16 @@ export async function uploadEvidence(input: UploadEvidenceInput, deps: UploadEvi
   let upload: UploadRecord | null = null;
   let job: Tables<"extraction_jobs"> | null = null;
   let migrationWarning: string | null = null;
+  let stage = "storage";
 
   try {
     await repo.uploadFile(storagePath, input.file, input.file.type);
+    console.info("marco.upload_storage_completed", {
+      ...logContext,
+      trip_id: trip.id,
+      duration_ms: elapsedMs(startedAt)
+    });
+    stage = "upload_record";
     upload = await repo.createUploadRecord({
       owner_id: user.id,
       trip_id: trip.id,
@@ -68,6 +92,14 @@ export async function uploadEvidence(input: UploadEvidenceInput, deps: UploadEvi
       storage_path: storagePath,
       status: "uploaded"
     });
+    console.info("marco.upload_record_created", {
+      ...logContext,
+      upload_id: upload.id,
+      trip_id: trip.id,
+      status: upload.status,
+      duration_ms: elapsedMs(startedAt)
+    });
+    stage = "extraction_job";
     job = await repo.createExtractionJob({
       upload_id: upload.id,
       trip_id: trip.id,
@@ -75,10 +107,28 @@ export async function uploadEvidence(input: UploadEvidenceInput, deps: UploadEvi
       provider: process.env.EXTRACTION_PROVIDER ?? "n8n",
       model: process.env.EXTRACTION_FALLBACK_MODEL ?? "claude-haiku"
     });
+    console.info("marco.upload_extraction_job_created", {
+      ...logContext,
+      upload_id: upload.id,
+      job_id: job.id,
+      trip_id: trip.id,
+      status: job.status,
+      duration_ms: elapsedMs(startedAt)
+    });
     migrationWarning = "migration_warning" in job ? String(job.migration_warning) : null;
 
+    stage = "dispatch";
     const dispatched = await dispatch({ jobId: job.id, uploadId: upload.id, tripId: trip.id });
     if (!dispatched.ok && dispatched.warning) {
+      console.warn("marco.upload_dispatch_failed", {
+        ...logContext,
+        upload_id: upload.id,
+        job_id: job.id,
+        trip_id: trip.id,
+        dispatched: false,
+        error_message: truncateErrorMessage(dispatched.warning),
+        duration_ms: elapsedMs(startedAt)
+      });
       await repo.markExtractionJob(
         job.id,
         migrationWarning
@@ -88,6 +138,15 @@ export async function uploadEvidence(input: UploadEvidenceInput, deps: UploadEvi
               warnings: [dispatched.warning]
             }
       );
+    } else {
+      console.info("marco.upload_dispatch_completed", {
+        ...logContext,
+        upload_id: upload.id,
+        job_id: job.id,
+        trip_id: trip.id,
+        dispatched: true,
+        duration_ms: elapsedMs(startedAt)
+      });
     }
 
     return {
@@ -98,6 +157,15 @@ export async function uploadEvidence(input: UploadEvidenceInput, deps: UploadEvi
     };
   } catch (error) {
     const message = errorMessage(error, "Extraction failed.");
+    console.warn("marco.upload_workflow_failed", {
+      ...logContext,
+      upload_id: upload?.id,
+      job_id: job?.id,
+      trip_id: trip.id,
+      stage,
+      error_message: truncateErrorMessage(message),
+      duration_ms: elapsedMs(startedAt)
+    });
     if (upload) {
       const uploadId = upload.id;
       await settle(() => repo.markUploadStatus(uploadId, "failed"));
@@ -125,4 +193,17 @@ async function settle(action: () => Promise<void>) {
   } catch {
     // Preserve the original workflow failure; cleanup errors are secondary.
   }
+}
+
+function elapsedMs(startedAt: number) {
+  return Date.now() - startedAt;
+}
+
+function fileExtension(filename: string) {
+  const extension = filename.split(".").pop();
+  return extension && extension !== filename ? extension.toLowerCase().slice(0, 16) : "";
+}
+
+function truncateErrorMessage(message: string) {
+  return message.slice(0, 240);
 }
