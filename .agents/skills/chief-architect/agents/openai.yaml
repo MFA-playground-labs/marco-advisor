@@ -1,0 +1,4 @@
+interface:
+  display_name: "Chief Architect"
+  short_description: "Architecture reviews and solution design"
+  default_prompt: "Use $chief-architect to review or design this product architecture and produce a detailed solution spec."
