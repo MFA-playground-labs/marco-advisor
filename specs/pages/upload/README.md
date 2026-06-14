@@ -11,7 +11,7 @@ Upload is the evidence intake page. It collects files and optional trip metadata
 ## Current Behavior
 
 - Renders `UploadPanel`, review queue, pipeline state, and `MarcoChat`.
-- Accepts PDF, text, and HTML files in current validation.
+- Accepts PDF, text, HTML, PNG, JPEG, and WebP files in current validation.
 - Posts multipart upload data to `/api/upload`.
 - Shows upload/dispatch status and refreshes route data on success.
 
@@ -34,13 +34,12 @@ Upload is the evidence intake page. It collects files and optional trip metadata
 
 - Depends on Supabase anonymous session middleware.
 - Extraction is n8n-first and asynchronous.
-- Upload MIME support currently conflicts with screenshot-oriented copy.
+- Completed image evidence work is preserved in the [spec archive](../../archive/README.md).
 
 ## Feature Backlog
 
 | Feature | Status | Priority | Spec | Notes |
 | --- | --- | --- | --- | --- |
-| Image evidence upload | Ready | P1 | [../../features/upload-image-evidence.md](../../features/upload-image-evidence.md) | Align screenshot copy with validation. |
 | Upload validation feedback | Draft | P2 | TBD | Show file type/size constraints before submit. |
 | Upload queue handoff clarity | Draft | P2 | TBD | Clarify queued, dispatched, warning, and failed states. |
 | Review queue shortcuts | Draft | P3 | TBD | Improve movement from upload review to bookings workbench. |
@@ -60,5 +59,5 @@ Upload is the evidence intake page. It collects files and optional trip metadata
 
 ## Existing And Needed Tests
 
-- Existing: upload validation and upload workflow tests.
-- Needed: image evidence validation, upload route contract tests, page-level status behavior for dispatch warnings.
+- Existing: upload validation, image evidence validation, upload workflow tests, and source checks for shared accept hints.
+- Needed: upload route contract tests and page-level status behavior for dispatch warnings.

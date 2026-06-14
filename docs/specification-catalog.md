@@ -697,11 +697,14 @@ Sources: `tests/*.test.ts`
 Current coverage:
 
 - Upload file validation rejects unsupported MIME types.
+- Upload file validation accepts first-wave image evidence types: PNG, JPEG, and WebP.
 - `uploadEvidence()` stores upload, creates queued job, dispatches job, records dispatch warnings, preserves fallback schema behavior, and returns migration warnings.
 - Schema cache errors map to async extraction migration guidance.
 - Repository retries extraction job insert against old schema when async columns are absent.
 - Webhook auth rejects missing/invalid secrets.
-- `completeExtraction()` writes pages/candidates on success and marks upload/job failed on failed callback.
+- Worker metadata route claims jobs through the atomic extraction job claim boundary.
+- Worker file endpoint returns original upload metadata and a 300-second signed URL.
+- `completeExtraction()` validates callback payloads and delegates terminal state persistence to the atomic extraction completion boundary.
 - `reviewCandidate()` maps candidates into bookings and segments before accepting.
 - `runTripScan()` replaces persisted issues for the active trip.
 - `scanTrip()` detects hotel overlaps and gap nights.
@@ -724,8 +727,6 @@ These are places where the code has behavior but future spec-driven development 
 - Manual booking creation UI/API is not implemented, despite some copy saying manual entries may exist.
 - Candidate rejection has no audit trail or undo behavior.
 - `bookings` and `booking_segments` are created without transaction semantics; partial creation is possible if segment creation fails after booking insertion.
-- `replaceUploadPages()` assumes all pages belong to the same first `job_id`; mixed-job input is not validated.
-- Upload MIME support excludes images even though page copy mentions screenshots.
 - `UploadRecord.trip_id` and `ExtractionJob.trip_id` are nullable in TypeScript but not nullable in the schema for current migrations.
 - `extractBookingsFromUpload()` is not wired into the main upload flow.
 - Scanner date logic uses current wall-clock time for cancellation deadlines, which makes tests around deadlines time-sensitive unless clock injection is introduced.
@@ -733,8 +734,13 @@ These are places where the code has behavior but future spec-driven development 
 - Itinerary preference sliders are presentational and not persisted.
 - Marco chat does not currently stream, persist conversations, or enforce prompt/token limits in app code.
 - Worker endpoints use service role and bearer secret; n8n access scope and operational rotation policy are not documented.
+- Stale `processing` extraction jobs are visible but do not yet have an automatic retry scheduler or user-facing retry action.
 
-## 12. Suggested Spec-Driven Development Motion
+## 12. Spec Visibility And Archive
+
+Active feature specs live in `specs/features/` and should represent current implementation targets only. Implemented, superseded, deferred, or retired specs move to `specs/archive/` and remain version controlled through the archive index.
+
+## 13. Suggested Spec-Driven Development Motion
 
 1. Promote this catalog into one spec file per bounded area:
    - `specs/runtime.md`

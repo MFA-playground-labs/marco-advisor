@@ -63,5 +63,5 @@ Bookings is the operating surface for turning extracted candidates into trusted 
 
 ## Existing And Needed Tests
 
-- Existing: `reviewCandidate()` accept path is covered; booking mapping is covered.
-- Needed: manual booking workflow, reject path, unsupported intent, booking edit/cancel, transaction safety, page-level review states.
+- Existing: `reviewCandidate()` accept/reject/unsupported paths, booking mapping, confidence bands, and source evidence display source checks are covered.
+- Needed: manual booking workflow, booking edit/cancel, transaction safety, page-level review states.

@@ -283,9 +283,101 @@ describe("supabase repository", () => {
       }
     ]);
   });
+
+  it("claims extraction jobs through the atomic rpc", async () => {
+    const calls: unknown[] = [];
+    const supabase = {
+      rpc(name: string, input: unknown) {
+        calls.push({ name, input });
+        return {
+          async single() {
+            return {
+              data: {
+                ...job,
+                claimed: true,
+                upload_owner_id: upload.owner_id,
+                upload_trip_id: upload.trip_id,
+                upload_filename: upload.filename,
+                upload_content_type: upload.content_type,
+                upload_storage_path: upload.storage_path,
+                upload_status: upload.status,
+                upload_created_at: upload.created_at ?? null
+              },
+              error: null
+            };
+          }
+        };
+      }
+    };
+
+    const repo = createSupabaseRepository(supabase as any);
+    await expect(repo.claimExtractionJob(job.id)).resolves.toMatchObject({
+      id: job.id,
+      upload_id: upload.id,
+      status: "queued",
+      claimed: true,
+      upload: {
+        id: upload.id,
+        filename: upload.filename,
+        content_type: upload.content_type,
+        storage_path: upload.storage_path
+      }
+    });
+    expect(calls).toEqual([{ name: "claim_extraction_job", input: { input_job_id: job.id } }]);
+  });
+
+  it("completes extraction jobs through the atomic rpc", async () => {
+    const calls: unknown[] = [];
+    const supabase = {
+      rpc(name: string, input: unknown) {
+        calls.push({ name, input });
+        return {
+          async single() {
+            return {
+              data: {
+                status: "succeeded",
+                candidates: 1,
+                duplicate: false
+              },
+              error: null
+            };
+          }
+        };
+      }
+    };
+
+    const repo = createSupabaseRepository(supabase as any);
+    await expect(
+      repo.completeExtractionJob({
+        jobId: job.id,
+        status: "succeeded",
+        pages: [],
+        trip: {},
+        bookings: [],
+        warnings: [],
+        provider: "n8n",
+        model: "claude-haiku",
+        errorMessage: null,
+        rawResult: {}
+      })
+    ).resolves.toEqual({ status: "succeeded", candidates: 1, duplicate: false });
+    expect(calls).toEqual([
+      {
+        name: "complete_extraction_job",
+        input: expect.objectContaining({
+          input_job_id: job.id,
+          input_status: "succeeded",
+          input_provider: "n8n"
+        })
+      }
+    ]);
+  });
 });
 
 describe("extraction callback", () => {
+  const consoleInfo = vi.spyOn(console, "info").mockImplementation(() => undefined);
+  const consoleWarn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
   it("rejects missing or invalid webhook secrets", () => {
     const previous = process.env.EXTRACTION_WEBHOOK_SECRET;
     process.env.EXTRACTION_WEBHOOK_SECRET = "secret";
@@ -304,13 +396,7 @@ describe("extraction callback", () => {
 
   it("writes pages and candidates from a valid callback payload", async () => {
     const repo = {
-      getExtractionJobWithUpload: vi.fn().mockResolvedValue({ ...job, upload }),
-      replaceUploadPages: vi.fn().mockResolvedValue(undefined),
-      updateTrip: vi.fn().mockResolvedValue(undefined),
-      upsertTravelers: vi.fn().mockResolvedValue(undefined),
-      createCandidates: vi.fn().mockResolvedValue(undefined),
-      markUploadStatus: vi.fn().mockResolvedValue(undefined),
-      markExtractionJob: vi.fn().mockResolvedValue(undefined)
+      completeExtractionJob: vi.fn().mockResolvedValue({ status: "succeeded", candidates: 1, duplicate: false })
     };
 
     await expect(
@@ -334,24 +420,20 @@ describe("extraction callback", () => {
       })
     ).resolves.toEqual({ status: "succeeded", candidates: 1 });
 
-    expect(repo.replaceUploadPages).toHaveBeenCalledWith([
-      expect.objectContaining({ job_id: job.id, page_number: 1, char_count: 25 })
-    ]);
-    expect(repo.createCandidates).toHaveBeenCalledWith([
-      expect.objectContaining({ status: "needs_review", source_job_id: job.id, confidence: 0.6, extraction_method: "haiku" })
-    ]);
-    expect(repo.markUploadStatus).toHaveBeenCalledWith(upload.id, "review_ready");
+    expect(repo.completeExtractionJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jobId: job.id,
+        status: "succeeded",
+        pages: [expect.objectContaining({ page_number: 1, text: "Hotel confirmation ABC123" })],
+        bookings: [expect.objectContaining({ confidence: 0.6, extraction_method: "haiku" })]
+      })
+    );
+    expect(consoleInfo).toHaveBeenCalledWith("marco.extraction_callback_completed", expect.objectContaining({ job_id: job.id, candidates: 1 }));
   });
 
   it("marks jobs and uploads failed when n8n reports extraction failure", async () => {
     const repo = {
-      getExtractionJobWithUpload: vi.fn().mockResolvedValue({ ...job, upload }),
-      replaceUploadPages: vi.fn().mockResolvedValue(undefined),
-      updateTrip: vi.fn().mockResolvedValue(undefined),
-      upsertTravelers: vi.fn().mockResolvedValue(undefined),
-      createCandidates: vi.fn().mockResolvedValue(undefined),
-      markUploadStatus: vi.fn().mockResolvedValue(undefined),
-      markExtractionJob: vi.fn().mockResolvedValue(undefined)
+      completeExtractionJob: vi.fn().mockResolvedValue({ status: "failed", candidates: 0, duplicate: false })
     };
 
     await expect(
@@ -363,9 +445,36 @@ describe("extraction callback", () => {
       })
     ).resolves.toEqual({ status: "failed", candidates: 0 });
 
-    expect(repo.markUploadStatus).toHaveBeenCalledWith(upload.id, "failed");
-    expect(repo.markExtractionJob).toHaveBeenCalledWith(job.id, expect.objectContaining({ status: "failed", error_message: "No extractable text" }));
-    expect(repo.createCandidates).not.toHaveBeenCalled();
+    expect(repo.completeExtractionJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jobId: job.id,
+        status: "failed",
+        errorMessage: "No extractable text",
+        warnings: ["No extractable text"]
+      })
+    );
+    expect(consoleWarn).toHaveBeenCalledWith("marco.extraction_callback_failed", expect.objectContaining({ job_id: job.id }));
+  });
+
+  it("returns the existing terminal state when a duplicate callback is ignored", async () => {
+    const repo = {
+      completeExtractionJob: vi.fn().mockResolvedValue({ status: "succeeded", candidates: 1, duplicate: true })
+    };
+
+    await expect(
+      completeExtraction(repo, {
+        job_id: job.id,
+        status: "failed",
+        warnings: ["late duplicate failure"],
+        error_message: "late duplicate failure"
+      })
+    ).resolves.toEqual({ status: "succeeded", candidates: 1 });
+
+    expect(repo.completeExtractionJob).toHaveBeenCalledOnce();
+    expect(consoleInfo).toHaveBeenCalledWith(
+      "marco.extraction_callback_duplicate_ignored",
+      expect.objectContaining({ job_id: job.id, requested_status: "failed", current_status: "succeeded" })
+    );
   });
 });
 

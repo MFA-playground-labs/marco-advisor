@@ -9,14 +9,15 @@ Feature specs describe intended future behavior. The current application behavio
 - `In Progress`: implementation underway.
 - `Implemented`: shipped and catalog updated.
 - `Deferred`: intentionally postponed.
+- `Superseded`: replaced by a newer active or archived spec.
 
-## First-Wave Upload/Extraction Specs
+## Active Feature Specs
 
 | Spec | Status | Purpose |
 | --- | --- | --- |
-| [Upload Image Evidence](upload-image-evidence.md) | Ready | Add screenshot/image evidence support to the upload and extraction pipeline. |
-| [Extraction Pipeline Reliability](extraction-pipeline-reliability.md) | Ready | Make async extraction job states, failures, retries, and visibility decision-complete. |
-| [Extraction Review Quality](extraction-review-quality.md) | Ready | Improve candidate review confidence, source evidence, and post-review behavior. |
+| [Extraction Pipeline Reliability](extraction-pipeline-reliability.md) | Ready | Make worker claim and callback completion atomic, idempotent, and observable. |
+
+Implemented, superseded, and retired specs are preserved in the [spec archive](../archive/README.md).
 
 ## Page-Organized Specs
 

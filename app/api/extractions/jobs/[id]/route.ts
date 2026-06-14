@@ -16,24 +16,22 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     if (!supabase) return NextResponse.json({ error: "Supabase admin client is not configured." }, { status: 500 });
 
     const repo = createSupabaseRepository(supabase as any);
-    const job = await repo.getExtractionJobWithUpload(id);
-    let responseJob = job;
-    if (job.status === "queued") {
-      const startedAt = new Date().toISOString();
-      await repo.markExtractionJob(job.id, { status: "processing", started_at: startedAt });
-      responseJob = { ...job, status: "processing", started_at: startedAt };
-    }
+    const job = await repo.claimExtractionJob(id);
+    console.info(job.claimed ? "marco.extraction_job_claimed" : "marco.extraction_job_claim_skipped", {
+      job_id: job.id,
+      status: job.status
+    });
 
     return NextResponse.json({
       job: {
-        id: responseJob.id,
-        upload_id: responseJob.upload_id,
-        trip_id: responseJob.trip_id,
-        status: responseJob.status,
-        provider: responseJob.provider,
-        model: responseJob.model,
-        started_at: responseJob.started_at ?? null,
-        warnings: responseJob.warnings ?? []
+        id: job.id,
+        upload_id: job.upload_id,
+        trip_id: job.trip_id,
+        status: job.status,
+        provider: job.provider,
+        model: job.model,
+        started_at: job.started_at ?? null,
+        warnings: job.warnings ?? []
       },
       upload: {
         id: job.upload.id,

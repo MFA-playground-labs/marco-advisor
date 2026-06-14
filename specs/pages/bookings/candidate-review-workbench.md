@@ -5,7 +5,7 @@ Owner: TBD
 Page: `/bookings`
 Catalog references:
 
-- [Extraction Review Quality](../../features/extraction-review-quality.md)
+- [Archived Extraction Review Quality](../../archive/features/extraction-review-quality.md)
 - [Candidate review API](../../../docs/specification-catalog.md#post-apicandidatesid)
 - [Candidate review workflow](../../../docs/specification-catalog.md#reviewcandidaterepo-id-intent)
 - [Bookings page roadmap](README.md)

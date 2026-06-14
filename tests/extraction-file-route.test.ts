@@ -14,7 +14,7 @@ vi.mock("@/lib/server/supabase-repository", () => ({
   createSupabaseRepository: mocks.createSupabaseRepository
 }));
 
-import { GET } from "@/app/api/extractions/jobs/[id]/route";
+import { GET } from "@/app/api/extractions/jobs/[id]/file/route";
 
 const upload: UploadRecord = {
   id: "upload-1",
@@ -30,7 +30,7 @@ const job: ExtractionJob & { upload: UploadRecord } = {
   id: "job-1",
   upload_id: upload.id,
   trip_id: "trip-1",
-  status: "queued",
+  status: "processing",
   provider: "n8n",
   model: "claude-haiku",
   error_message: null,
@@ -39,7 +39,7 @@ const job: ExtractionJob & { upload: UploadRecord } = {
 };
 
 function authedRequest() {
-  return new Request("https://example.com/api/extractions/jobs/job-1", {
+  return new Request("https://example.com/api/extractions/jobs/job-1/file", {
     headers: { Authorization: "Bearer secret" }
   });
 }
@@ -48,7 +48,7 @@ function params() {
   return { params: Promise.resolve({ id: "job-1" }) };
 }
 
-describe("GET /api/extractions/jobs/[id]", () => {
+describe("GET /api/extractions/jobs/[id]/file", () => {
   const previousSecret = process.env.EXTRACTION_WEBHOOK_SECRET;
 
   beforeEach(() => {
@@ -61,7 +61,7 @@ describe("GET /api/extractions/jobs/[id]", () => {
   });
 
   it("returns 401 for invalid worker auth without touching Supabase", async () => {
-    const response = await GET(new Request("https://example.com/api/extractions/jobs/job-1"), params());
+    const response = await GET(new Request("https://example.com/api/extractions/jobs/job-1/file"), params());
 
     expect(response.status).toBe(401);
     await expect(response.json()).resolves.toEqual({ error: "Invalid extraction webhook secret." });
@@ -78,63 +78,26 @@ describe("GET /api/extractions/jobs/[id]", () => {
     expect(mocks.createSupabaseRepository).not.toHaveBeenCalled();
   });
 
-  it("marks queued jobs processing and returns the claimed status", async () => {
+  it("returns a 300-second signed URL and original upload metadata", async () => {
     const repo = {
-      claimExtractionJob: vi.fn().mockResolvedValue({
-        ...job,
-        status: "processing",
-        started_at: "2026-06-14T00:00:00.000Z",
-        claimed: true
-      })
+      getExtractionJobWithUpload: vi.fn().mockResolvedValue(job),
+      createSignedUploadUrl: vi.fn().mockResolvedValue({ signedUrl: "https://signed.example/upload" })
     };
     mocks.createSupabaseAdminClient.mockReturnValue({});
     mocks.createSupabaseRepository.mockReturnValue(repo);
 
     const response = await GET(authedRequest(), params());
-    const payload = await response.json();
 
     expect(response.status).toBe(200);
-    expect(repo.claimExtractionJob).toHaveBeenCalledWith(job.id);
-    expect(payload).toMatchObject({
-      job: {
-        id: job.id,
-        status: "processing",
-        started_at: "2026-06-14T00:00:00.000Z",
-        warnings: []
-      },
-      upload: {
-        id: upload.id,
-        content_type: "image/png"
-      },
-      limits: {
-        max_pages: 10,
-        max_text_chars: 25000,
-        confidence_threshold: 0.85
-      }
+    await expect(response.json()).resolves.toEqual({
+      job_id: job.id,
+      upload_id: upload.id,
+      filename: "booking.png",
+      content_type: "image/png",
+      signed_url: "https://signed.example/upload",
+      expires_in: 300
     });
-  });
-
-  it("does not reclaim already terminal jobs", async () => {
-    const repo = {
-      claimExtractionJob: vi.fn().mockResolvedValue({
-        ...job,
-        status: "succeeded",
-        started_at: "2026-06-14T00:00:00.000Z",
-        claimed: false
-      })
-    };
-    mocks.createSupabaseAdminClient.mockReturnValue({});
-    mocks.createSupabaseRepository.mockReturnValue(repo);
-
-    const response = await GET(authedRequest(), params());
-    const payload = await response.json();
-
-    expect(response.status).toBe(200);
-    expect(repo.claimExtractionJob).toHaveBeenCalledWith(job.id);
-    expect(payload.job).toMatchObject({
-      id: job.id,
-      status: "succeeded",
-      started_at: "2026-06-14T00:00:00.000Z"
-    });
+    expect(repo.getExtractionJobWithUpload).toHaveBeenCalledWith(job.id);
+    expect(repo.createSignedUploadUrl).toHaveBeenCalledWith(upload.storage_path, 300);
   });
 });

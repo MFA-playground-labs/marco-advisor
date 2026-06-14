@@ -15,6 +15,7 @@ Use specs in this order:
 
 - **Current-state catalog:** `docs/specification-catalog.md` describes how the app works today.
 - **Feature specs:** `specs/features/*.md` describe intended future behavior before code changes.
+- **Archived specs:** `specs/archive/*` preserves implemented, superseded, deferred, or retired specs that are not active implementation targets.
 - **Templates/checklists:** `specs/_templates/*` standardize new feature specs and review.
 
 ## Current Catalog Anchors
@@ -28,11 +29,11 @@ Use specs in this order:
 - [Test coverage map](../docs/specification-catalog.md#10-test-coverage-map)
 - [Open specification gaps](../docs/specification-catalog.md#11-open-specification-gaps)
 
-## First-Wave Feature Specs
+## Active Feature Specs
 
-- [Upload Image Evidence](features/upload-image-evidence.md)
 - [Extraction Pipeline Reliability](features/extraction-pipeline-reliability.md)
-- [Extraction Review Quality](features/extraction-review-quality.md)
+
+Archived feature history lives in [specs/archive](archive/README.md).
 
 ## Page-Organized Specs
 
@@ -50,6 +51,7 @@ Page specs organize feature work around the screens users actually use. Start at
 ## Working Rules
 
 - A feature spec is not ready for implementation until every acceptance criterion maps to a test, manual verification step, or explicit product decision.
+- Active README files should list only current implementation targets; completed or superseded specs should move to `specs/archive/`.
 - Open questions should be resolved before implementation. If a question is intentionally deferred, mark it as an assumption with an owner or follow-up.
 - Specs should name user-visible behavior, data/API changes, failure modes, and verification. They should not prescribe incidental code style unless it prevents ambiguity.
 - Documentation-only spec work must not change runtime behavior.

@@ -1,6 +1,6 @@
 # Feature: Upload Image Evidence
 
-Status: Ready
+Status: Implemented
 Owner: TBD
 Catalog references:
 

@@ -1,6 +1,6 @@
 # Feature: Extraction Review Quality
 
-Status: Ready
+Status: Implemented
 Owner: TBD
 Catalog references:
 

@@ -39,7 +39,7 @@ Pipeline is the operational trace for evidence ingestion. It shows how each uplo
 
 | Feature | Status | Priority | Spec | Notes |
 | --- | --- | --- | --- | --- |
-| Pipeline reliability | Ready | P1 | [../../features/extraction-pipeline-reliability.md](../../features/extraction-pipeline-reliability.md) | Job states, warnings, failures, visibility. |
+| Pipeline reliability | Ready | P1 | [../../features/extraction-pipeline-reliability.md](../../features/extraction-pipeline-reliability.md) | Atomic worker claim, idempotent callback completion, visibility. |
 | Worker lifecycle diagnostics | Draft | P2 | TBD | Show limits, started/completed timestamps, warning details. |
 | Manual retry strategy | Draft | P2 | TBD | Decide operator/user retry entrypoint. |
 | Accepted record lineage | Draft | P3 | TBD | Make source candidate/upload lineage more inspectable. |
@@ -59,5 +59,5 @@ Pipeline is the operational trace for evidence ingestion. It shows how each uplo
 
 ## Existing And Needed Tests
 
-- Existing: extraction callback workflow tests and schema-cache fallback tests.
-- Needed: worker route tests, page-level failure visibility checks, retry behavior tests after retry spec is approved.
+- Existing: extraction callback workflow tests, worker metadata route tests, file endpoint route tests, schema-cache fallback tests, and page-level warning visibility source checks.
+- Needed: retry behavior tests after retry spec is approved.

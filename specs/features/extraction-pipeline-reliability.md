@@ -9,135 +9,110 @@ Catalog references:
 - [Upload workflow](../../docs/specification-catalog.md#uploadevidenceinput-deps)
 - [Extraction completion workflow](../../docs/specification-catalog.md#completeextractionrepo-payload)
 - [Pipeline page](../../docs/specification-catalog.md#pages)
-- [Test coverage map](../../docs/specification-catalog.md#10-test-coverage-map)
+- [Spec archive](../archive/README.md)
 
 ## Problem
 
-The async extraction path works, but its operational contract is spread across upload workflow code, worker endpoints, callback handling, and pipeline UI. Dispatch failures, callback failures, stale schema fallback, and status visibility need a decision-complete feature spec before reliability work expands.
+The upload-first pipeline has a working happy path, but worker claim and callback completion can be retried or duplicated by n8n. App-side multi-write completion can leave partial state if one write succeeds and a later write fails, and duplicate callbacks can create duplicate review candidates.
 
 ## Goals
 
-- Define the intended lifecycle for queued, processing, succeeded, and failed extraction jobs.
-- Make dispatch failure, worker fetch, callback success, callback failure, and schema-cache fallback behavior explicit.
-- Improve pipeline visibility without changing the core n8n-first architecture.
-- Define tests that prove state transitions and user-visible status.
+- Make worker job claiming atomic.
+- Make callback completion transactional and idempotent.
+- Preserve existing public route contracts and n8n payload shapes.
+- Keep active specs visible while preserving completed/superseded specs in the archive.
 
 ## Non-Goals
 
 - No replacement of n8n.
-- No new extraction provider abstraction.
-- No automatic recurring retry scheduler in this first reliability wave.
-- No changes to the service-role worker auth model.
+- No recurring retry scheduler.
+- No per-job worker token in this wave.
+- No user-facing retry UI.
 
 ## User Flow
 
 1. User uploads supported evidence from `/upload`.
-2. App creates an upload and queued extraction job.
-3. App dispatches n8n.
-4. n8n fetches job metadata, which marks queued jobs as processing.
-5. n8n fetches a signed file URL.
-6. n8n posts a success or failure callback.
-7. User sees upload/job/candidate status on `/pipeline` and reviewable candidates on `/upload` or `/bookings`.
+2. App creates an upload and queued extraction job, then dispatches n8n.
+3. n8n atomically claims the job through the metadata endpoint.
+4. n8n fetches a short-lived signed file URL.
+5. n8n posts one or more success/failure callbacks.
+6. Marco applies the first terminal callback atomically and ignores duplicate terminal callbacks.
+7. User sees job, warning, page, candidate, and booking status on `/pipeline`.
 
 ## Current Behavior
 
-Current behavior is documented in the linked catalog sections. Important current details:
-
-- Upload dispatch failures return `{ dispatched: false }` but keep the queued job.
-- Worker metadata fetch marks queued jobs as processing with `started_at`.
-- Callback failure marks upload and job failed.
-- Callback success writes pages/candidates, marks upload `review_ready`, and marks job `succeeded`.
-- Repository has a fallback for deployments missing async extraction columns in Supabase schema cache.
+- Upload creates records and dispatches n8n.
+- Worker metadata fetch currently claims work at the route/repository layer.
+- Callback completion is validated in TypeScript and applied through multiple repository writes.
+- Completed and superseded feature specs currently sit beside active specs.
 
 ## Proposed Behavior
 
-- Preserve existing states and add no new job statuses in this wave.
-- Treat dispatch failure as a recoverable queued-job condition, not a failed extraction.
-- Ensure pipeline UI clearly distinguishes:
-  - queued and not dispatched or dispatch warning present
-  - processing
-  - succeeded with candidate count/page count
-  - failed with error message
-- Keep retry as a manual/operator follow-up in this wave. Do not add a retry endpoint unless a separate spec approves it.
-- Preserve schema-cache fallback messaging and make it visible wherever upload warnings are already shown.
-- Worker endpoints must continue to return JSON errors for invalid auth/configuration.
+- `claim_extraction_job(job_id)` atomically changes `queued` jobs to `processing`, sets `started_at`, and returns the current job/upload state for already claimed or terminal jobs.
+- `complete_extraction_job(...)` locks the job row, no-ops duplicate terminal callbacks, and applies success/failure writes inside one database transaction.
+- Successful completion replaces page text for the job, replaces unreviewed candidates for the job, applies trip/traveler updates, marks the upload `review_ready`, and marks the job `succeeded`.
+- Failed completion marks upload/job failed and creates no candidates.
+- Structured logs record worker claim, skipped claim, callback success, callback failure, and duplicate callback ignored.
+- Specs that are not active move to `specs/archive/` and active README lists link only active work.
 
 ## Data Contract
 
-- `extraction_jobs.status` remains one of `queued`, `processing`, `succeeded`, `failed`.
-- `extraction_jobs.error_message` stores dispatch warnings or terminal failure messages.
-- `extraction_jobs.warnings` stores non-terminal warnings where the async schema is available.
-- `extraction_jobs.started_at` is set when the worker claims a queued job.
-- `extraction_jobs.completed_at` is set for succeeded and failed callback completion.
-- `upload_pages` remains the page text table keyed by `job_id`.
-- No migration is required unless implementation discovers current generated types are stale.
+- Existing tables and statuses remain unchanged.
+- New database functions live in `public` and are executable only by `service_role`.
+- `anon` and `authenticated` must not be able to execute ingest reliability RPCs.
+- No new public table is introduced.
 
 ## API Contract
 
 - `POST /api/upload` response remains `{ upload, job, dispatched, warning? }`.
-- `GET /api/extractions/jobs/[id]`:
-  - Requires bearer secret.
-  - Marks queued jobs processing.
-  - Returns `job`, `upload`, and `limits`.
-  - Does not mark already failed/succeeded jobs processing.
-- `GET /api/extractions/jobs/[id]/file`:
-  - Requires bearer secret.
-  - Returns 300-second signed URL.
-- `POST /api/extractions/callback`:
-  - Requires bearer secret.
-  - Accepts success and failure payloads matching `extractionCallbackSchema`.
-  - Returns `{ status, candidates }`.
+- `GET /api/extractions/jobs/[id]` response remains `{ job, upload, limits }`.
+- `GET /api/extractions/jobs/[id]/file` response remains `{ job_id, upload_id, filename, content_type, signed_url, expires_in }`.
+- `POST /api/extractions/callback` response remains `{ status, candidates }`.
 
 ## UI Contract
 
-- `/upload` continues to show immediate upload/dispatch feedback.
-- `/pipeline` is the primary operational view for upload -> job -> pages -> candidates -> accepted records.
-- `/pipeline` must display job status, provider, page count, candidate count, booking count, and any job error message.
-- Dispatch warnings should be visible without requiring console/log access.
-- No new admin-only UI is required in this wave.
+- `/pipeline` remains the operational trace for upload, job, page, candidate, and booking state.
+- Stale `processing` jobs remain visible as `processing`; manual/operator retry is deferred.
+- Active spec indexes show only active specs and link to the archive separately.
 
 ## Workflow Contract
 
-- `uploadEvidence()` creates upload and queued job before dispatch.
-- Dispatch failure records warning/error metadata but does not mark the job failed.
-- Worker metadata fetch is the only lifecycle point that moves `queued` to `processing`.
-- `completeExtraction()` is the only lifecycle point that moves jobs to `succeeded` or terminal `failed`.
-- Failed callbacks must not create candidates.
-- Successful callbacks must mark upload `review_ready` after candidate/page persistence.
+- Upload dispatch behavior is unchanged.
+- Worker metadata route uses `claim_extraction_job`.
+- Callback route validates payloads in TypeScript and delegates persistence to `complete_extraction_job`.
+- Duplicate terminal callbacks return the current terminal state without rewriting data.
 
 ## Failure Modes
 
-- Missing n8n URL: upload succeeds, job remains queued, warning is stored and surfaced.
-- n8n non-2xx dispatch response: upload succeeds, job remains queued, HTTP status warning is stored and surfaced.
-- Worker invalid secret: endpoint returns 401 JSON, no state mutation.
-- Admin client missing: worker endpoint returns 500 JSON, no job processing.
-- Callback failed payload: upload/job marked failed, no candidates created.
-- Stale async schema cache: upload returns migration warning and avoids writing unavailable columns.
+- Duplicate success callback: return existing `succeeded` state and do not duplicate candidates.
+- Duplicate failure callback after success: return existing `succeeded` state and do not rewrite terminal success.
+- Failed callback before success: atomically marks upload/job failed and creates no candidates.
+- Missing/invalid worker auth: return JSON 401 and do not touch Supabase.
+- Missing admin client: return JSON 500 and do not mutate state.
 
 ## Acceptance Criteria
 
-- [ ] Dispatch failure keeps the job queued and stores a visible warning. Verification: workflow test and manual `/pipeline` check.
-- [ ] Worker metadata fetch marks only queued jobs as processing. Verification: route/API test or focused repository/workflow test.
-- [ ] Worker file endpoint returns a 300-second signed URL and original upload metadata. Verification: route/API test or manual worker call.
-- [ ] Successful callback writes pages/candidates and marks upload/job complete. Verification: existing workflow test remains green or is expanded.
-- [ ] Failed callback marks upload/job failed and creates no candidates. Verification: existing workflow test remains green or is expanded.
-- [ ] Schema-cache fallback preserves user-facing migration warning. Verification: existing workflow/repository tests remain green.
-- [ ] `/pipeline` surfaces job error messages/warnings. Verification: manual UI check or component test.
+- [ ] Atomic claim prevents duplicate `queued -> processing` worker claims. Verification: route/repository tests and migration review.
+- [ ] Successful callback completion is delegated to one RPC boundary. Verification: workflow/repository tests.
+- [ ] Duplicate terminal callbacks do not create duplicate candidates or rewrite terminal success. Verification: workflow/route tests and RPC contract review.
+- [ ] Worker file endpoint returns a 300-second signed URL and upload metadata. Verification: route test.
+- [ ] Active spec indexes exclude archived specs. Verification: source test.
+- [ ] Archived specs remain linked from `specs/archive/README.md`. Verification: source test.
 
 ## Test Plan
 
-- Unit: error utility tests for schema-cache fallback remain in place.
-- Workflow: expand `uploadEvidence()` and `completeExtraction()` tests for warning visibility and terminal state fields.
-- Route/API: add tests for worker metadata status transition, auth failure, and admin config failure when route-test harness exists.
-- UI/manual: simulate dispatch warning and failed callback, confirm `/pipeline` shows status and error message.
-- Regression: confirm normal upload -> callback -> review flow is unchanged.
+- Unit/workflow: callback success, failure, and duplicate terminal behavior.
+- Repository: RPC call shapes for claim and completion.
+- Route/API: worker metadata, worker file, and callback auth/config/success/failure branches.
+- Spec governance: active README and archive index source checks.
+- Regression: `npm run test`, `npm run typecheck`, `npm run build`.
 
 ## Open Questions
 
-- None for this wave. Manual retry behavior is explicitly deferred.
+- None. Manual retry and per-job worker tokens are deferred by product decision.
 
 ## Implementation Notes
 
-- Assumptions: keeping only existing statuses avoids a migration and keeps reliability work narrow.
-- Suggested source areas: upload workflow, extraction route handlers, pipeline page, workflow tests.
-- Migration/compatibility notes: avoid schema changes unless generated types are proven stale during implementation.
+- Assumptions: n8n remains the only worker and uses the service-role-backed app endpoints.
+- Suggested source areas: Supabase migration, repository, extraction callback workflow, worker routes, specs.
+- Migration/compatibility notes: run Supabase advisors when a local/linked Supabase environment is available.
