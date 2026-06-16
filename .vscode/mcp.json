@@ -3,15 +3,11 @@
 		"supabase": {
 			"type": "http",
 			"url": "https://mcp.supabase.com/mcp?project_ref=ixbhpsgcidxmcqbmeuec"
+			
 		},
 		"my-mcp-server-faa004a5": {
 			"type": "stdio",
 			"command": "enter",
-			"args": []
-		},
-		"my-mcp-server-9e4add39": {
-			"type": "stdio",
-			"command": "Enter",
 			"args": []
 		}
 	},
