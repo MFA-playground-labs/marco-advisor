@@ -98,6 +98,7 @@ function uploadRepo(overrides: Partial<UploadEvidenceDeps["repo"]> = {}): Upload
     createExtractionJob: vi.fn().mockResolvedValue(job),
     markUploadStatus: vi.fn().mockResolvedValue(undefined),
     markExtractionJob: vi.fn().mockResolvedValue(undefined),
+    recordExtractionJobEvent: vi.fn().mockResolvedValue({ id: "event-1" }),
     ...overrides
   };
 }
@@ -159,8 +160,53 @@ describe("uploadEvidence", () => {
 
     expect(repo.uploadFile).toHaveBeenCalledOnce();
     expect(repo.createUploadRecord).toHaveBeenCalledWith(expect.objectContaining({ status: "uploaded" }));
-    expect(repo.createExtractionJob).toHaveBeenCalledWith(expect.objectContaining({ status: "queued", provider: "n8n", model: "claude-haiku" }));
+    expect(repo.createExtractionJob).toHaveBeenCalledWith(expect.objectContaining({ status: "queued", provider: "openai", model: "gpt-4.1-mini" }));
     expect(dispatch).toHaveBeenCalledWith({ jobId: job.id, uploadId: upload.id, tripId: trip.id });
+  });
+
+  it("uses n8n provider metadata when the fallback provider is configured", async () => {
+    const previousProvider = process.env.EXTRACTION_PROVIDER;
+    process.env.EXTRACTION_PROVIDER = "n8n";
+    const repo = uploadRepo();
+    const dispatch = vi.fn().mockResolvedValue({ ok: true });
+
+    await uploadEvidence({ file: textFile(), tripName: "Italy", destination: "Italy", startsOn: "", endsOn: "" }, { repo, dispatch });
+
+    expect(repo.createExtractionJob).toHaveBeenCalledWith(expect.objectContaining({ status: "queued", provider: "n8n", model: "claude-haiku" }));
+    if (previousProvider === undefined) {
+      delete process.env.EXTRACTION_PROVIDER;
+    } else {
+      process.env.EXTRACTION_PROVIDER = previousProvider;
+    }
+  });
+
+  it("propagates the trace id to upload and extraction job persistence", async () => {
+    const repo = uploadRepo();
+    const dispatch = vi.fn().mockResolvedValue({ ok: true });
+
+    await uploadEvidence(
+      { file: textFile(), tripName: "Italy", destination: "Italy", startsOn: "", endsOn: "" },
+      { repo, dispatch, observability: { traceId: "trace-1", interactionId: "interaction-1" } }
+    );
+
+    expect(repo.createUploadRecord).toHaveBeenCalledWith(expect.objectContaining({ trace_id: "trace-1" }));
+    expect(repo.createExtractionJob).toHaveBeenCalledWith(expect.objectContaining({ trace_id: "trace-1" }));
+    expect(repo.recordExtractionJobEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        traceId: "trace-1",
+        tripId: trip.id,
+        uploadId: upload.id,
+        jobId: job.id,
+        event: "marco.upload_extraction_job_created"
+      })
+    );
+    expect(repo.recordExtractionJobEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        traceId: "trace-1",
+        event: "marco.upload_dispatch_completed",
+        metadata: { dispatched: true }
+      })
+    );
   });
 
   it("sends image evidence through the same upload workflow and dispatch shape", async () => {
@@ -182,7 +228,7 @@ describe("uploadEvidence", () => {
     expect(dispatch).toHaveBeenCalledWith({ jobId: job.id, uploadId: upload.id, tripId: trip.id });
   });
 
-  it("keeps the upload queued and records a warning when n8n dispatch fails", async () => {
+  it("keeps the upload queued and records a warning when dispatch fails", async () => {
     const repo = uploadRepo();
     const dispatch = vi.fn().mockResolvedValue({ ok: false, warning: "n8n unavailable" });
 
@@ -294,6 +340,12 @@ describe("supabase repository", () => {
             return {
               data: {
                 ...job,
+                trace_id: "trace-1",
+                attempt_id: "attempt-1",
+                last_stage: "claim",
+                provider_request_id: "resp_1",
+                provider_latency_ms: 123,
+                provider_usage: { input_tokens: 10 },
                 claimed: true,
                 upload_owner_id: upload.owner_id,
                 upload_trip_id: upload.trip_id,
@@ -301,6 +353,7 @@ describe("supabase repository", () => {
                 upload_content_type: upload.content_type,
                 upload_storage_path: upload.storage_path,
                 upload_status: upload.status,
+                upload_trace_id: "trace-1",
                 upload_created_at: upload.created_at ?? null
               },
               error: null
@@ -314,13 +367,20 @@ describe("supabase repository", () => {
     await expect(repo.claimExtractionJob(job.id)).resolves.toMatchObject({
       id: job.id,
       upload_id: upload.id,
+      trace_id: "trace-1",
+      attempt_id: "attempt-1",
+      last_stage: "claim",
+      provider_request_id: "resp_1",
+      provider_latency_ms: 123,
+      provider_usage: { input_tokens: 10 },
       status: "queued",
       claimed: true,
       upload: {
         id: upload.id,
         filename: upload.filename,
         content_type: upload.content_type,
-        storage_path: upload.storage_path
+        storage_path: upload.storage_path,
+        trace_id: "trace-1"
       }
     });
     expect(calls).toEqual([{ name: "claim_extraction_job", input: { input_job_id: job.id } }]);
@@ -370,6 +430,141 @@ describe("supabase repository", () => {
           input_provider: "n8n"
         })
       }
+    ]);
+  });
+
+  it("updates extraction job observability metadata", async () => {
+    const calls: unknown[] = [];
+    const supabase = {
+      from(table: string) {
+        return {
+          update(input: unknown) {
+            calls.push({ table, input });
+            return {
+              eq(column: string, value: string) {
+                calls.push({ column, value });
+                return { error: null };
+              }
+            };
+          }
+        };
+      }
+    };
+
+    const repo = createSupabaseRepository(supabase as any);
+    await repo.updateExtractionJobObservability(job.id, {
+      traceId: "trace-1",
+      attemptId: "attempt-1",
+      lastStage: "openai_request",
+      providerRequestId: "resp_123",
+      providerLatencyMs: 1234,
+      providerUsage: { input_tokens: 10, output_tokens: 20 }
+    });
+
+    expect(calls).toEqual([
+      {
+        table: "extraction_jobs",
+        input: {
+          trace_id: "trace-1",
+          attempt_id: "attempt-1",
+          last_stage: "openai_request",
+          provider_request_id: "resp_123",
+          provider_latency_ms: 1234,
+          provider_usage: { input_tokens: 10, output_tokens: 20 }
+        }
+      },
+      { column: "id", value: job.id }
+    ]);
+  });
+
+  it("skips empty extraction job observability updates", async () => {
+    const supabase = {
+      from: vi.fn()
+    };
+
+    const repo = createSupabaseRepository(supabase as any);
+    await repo.updateExtractionJobObservability(job.id, {});
+
+    expect(supabase.from).not.toHaveBeenCalled();
+  });
+
+  it("records extraction job events in the durable ledger", async () => {
+    const calls: unknown[] = [];
+    const eventRow = {
+      id: "event-1",
+      trace_id: "trace-1",
+      job_id: job.id,
+      upload_id: upload.id,
+      trip_id: trip.id,
+      attempt_id: "attempt-1",
+      event: "marco.extraction_job_claimed",
+      stage: "claim",
+      status: "processing",
+      provider: "openai",
+      model: "gpt-4.1-mini",
+      duration_ms: 42,
+      error_message: null,
+      metadata: { claimed: true },
+      created_at: "2026-06-16T00:00:00Z"
+    };
+    const supabase = {
+      from(table: string) {
+        return {
+          insert(input: unknown) {
+            calls.push({ table, input });
+            return {
+              select(columns: string) {
+                calls.push({ columns });
+                return {
+                  async single() {
+                    return { data: eventRow, error: null };
+                  }
+                };
+              }
+            };
+          }
+        };
+      }
+    };
+
+    const repo = createSupabaseRepository(supabase as any);
+    await expect(
+      repo.recordExtractionJobEvent({
+        traceId: "trace-1",
+        jobId: job.id,
+        uploadId: upload.id,
+        tripId: trip.id,
+        attemptId: "attempt-1",
+        event: "marco.extraction_job_claimed",
+        stage: "claim",
+        status: "processing",
+        provider: "openai",
+        model: "gpt-4.1-mini",
+        durationMs: 42,
+        metadata: { claimed: true }
+      })
+    ).resolves.toEqual(eventRow);
+
+    expect(calls).toEqual([
+      {
+        table: "extraction_job_events",
+        input: {
+          trace_id: "trace-1",
+          job_id: job.id,
+          upload_id: upload.id,
+          trip_id: trip.id,
+          attempt_id: "attempt-1",
+          event: "marco.extraction_job_claimed",
+          stage: "claim",
+          status: "processing",
+          provider: "openai",
+          model: "gpt-4.1-mini",
+          duration_ms: 42,
+          error_message: null,
+          metadata: { claimed: true }
+        }
+      },
+      { columns: "*" }
     ]);
   });
 });

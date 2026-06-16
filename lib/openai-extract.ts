@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import type { ResponseInputMessageContentList } from "openai/resources/responses/responses";
+import type { Json } from "@/lib/database.types";
 import { extractionJsonSchema, extractionResultSchema, type ExtractionResult } from "@/lib/extraction-schema";
 
 const extractionPrompt = `
@@ -10,6 +11,7 @@ Use ISO dates when possible. Use null when a field is unknown.
 Set confidence below 0.7 when important fields are ambiguous.
 Put any unknown required fields in missing_fields.
 Do not invent prices, dates, confirmation codes, travelers, or refundability.
+For every booking you extract from the uploaded content, set extraction_method to "openai".
 `;
 
 export async function extractBookingsFromUpload(input: {
@@ -19,7 +21,15 @@ export async function extractBookingsFromUpload(input: {
   fileData?: string;
   fileId?: string;
   text?: string;
-}): Promise<ExtractionResult> {
+}): Promise<{
+  result: ExtractionResult;
+  provider: {
+    responseId: string | null;
+    model: string;
+    usage: Json;
+    rawResult: Json;
+  };
+}> {
   if (!process.env.OPENAI_API_KEY) {
     throw new Error("OPENAI_API_KEY is required for extraction.");
   }
@@ -45,8 +55,9 @@ export async function extractBookingsFromUpload(input: {
     throw new Error("Extraction requires file data, file id, image data, or text input.");
   }
 
+  const model = process.env.OPENAI_EXTRACTION_MODEL ?? "gpt-4.1-mini";
   const response = await client.responses.create({
-    model: process.env.OPENAI_EXTRACTION_MODEL ?? "gpt-4.1-mini",
+    model,
     input: [
       {
         role: "user",
@@ -62,7 +73,15 @@ export async function extractBookingsFromUpload(input: {
   });
 
   const parsed = JSON.parse(response.output_text);
-  return extractionResultSchema.parse(parsed);
+  return {
+    result: extractionResultSchema.parse(parsed),
+    provider: {
+      responseId: typeof response.id === "string" ? response.id : null,
+      model: typeof response.model === "string" ? response.model : model,
+      usage: toJsonObject((response as { usage?: unknown }).usage),
+      rawResult: compactResponseMetadata(response, model)
+    }
+  };
 }
 
 export async function askMarco(input: {
@@ -89,4 +108,27 @@ export async function askMarco(input: {
   });
 
   return response.output_text;
+}
+
+function compactResponseMetadata(response: unknown, requestedModel: string): Json {
+  const value = response as {
+    id?: unknown;
+    model?: unknown;
+    status?: unknown;
+    usage?: unknown;
+    output_text?: unknown;
+  };
+
+  return toJsonObject({
+    id: typeof value.id === "string" ? value.id : null,
+    model: typeof value.model === "string" ? value.model : requestedModel,
+    status: typeof value.status === "string" ? value.status : null,
+    usage: toJsonObject(value.usage),
+    output_text_length: typeof value.output_text === "string" ? value.output_text.length : null
+  });
+}
+
+function toJsonObject(value: unknown): Json {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return JSON.parse(JSON.stringify(value)) as Json;
 }

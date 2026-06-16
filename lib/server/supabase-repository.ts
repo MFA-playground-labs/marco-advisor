@@ -43,6 +43,31 @@ export type CompleteExtractionJobResult = {
   duplicate: boolean;
 };
 
+export type ExtractionJobObservabilityUpdate = {
+  traceId?: string | null;
+  attemptId?: string | null;
+  lastStage?: string | null;
+  providerRequestId?: string | null;
+  providerLatencyMs?: number | null;
+  providerUsage?: Json;
+};
+
+export type RecordExtractionJobEventInput = {
+  traceId: string;
+  tripId: string;
+  event: string;
+  jobId?: string | null;
+  uploadId?: string | null;
+  attemptId?: string | null;
+  stage?: string | null;
+  status?: string | null;
+  provider?: string | null;
+  model?: string | null;
+  durationMs?: number | null;
+  errorMessage?: string | null;
+  metadata?: Json;
+};
+
 const demoTripSlug = "marco-demo-trip";
 
 function dbError(message: string | undefined, status = 400): never {
@@ -68,6 +93,12 @@ function claimedExtractionJobFromRpc(row: any): ClaimedExtractionJob {
     status: row.status,
     provider: row.provider,
     model: row.model,
+    trace_id: row.trace_id ?? null,
+    attempt_id: row.attempt_id ?? null,
+    last_stage: row.last_stage ?? null,
+    provider_request_id: row.provider_request_id ?? null,
+    provider_latency_ms: row.provider_latency_ms ?? null,
+    provider_usage: row.provider_usage ?? {},
     error_message: row.error_message,
     warnings: row.warnings ?? [],
     raw_result: row.raw_result ?? {},
@@ -83,6 +114,7 @@ function claimedExtractionJobFromRpc(row: any): ClaimedExtractionJob {
       content_type: row.upload_content_type,
       storage_path: row.upload_storage_path,
       status: row.upload_status,
+      trace_id: row.upload_trace_id ?? null,
       created_at: row.upload_created_at
     }
   };
@@ -150,6 +182,11 @@ export function createSupabaseRepository(supabase: AppSupabaseClient) {
       return requireData(data?.signedUrl ? data : null, null);
     },
 
+    async downloadUploadedFile(storagePath: string) {
+      const { data, error } = await supabase.storage.from("trip-uploads").download(storagePath);
+      return requireData(data as Blob | null, error);
+    },
+
     async createUploadRecord(input: TablesInsert<"uploads">) {
       const { data, error } = await db.from("uploads").insert(input).select("*").single();
       return requireData(data as UploadRecord | null, error);
@@ -181,6 +218,40 @@ export function createSupabaseRepository(supabase: AppSupabaseClient) {
     async markExtractionJob(id: string, input: TablesUpdate<"extraction_jobs">) {
       const { error } = await db.from("extraction_jobs").update(input).eq("id", id);
       if (error) dbError(error.message);
+    },
+
+    async updateExtractionJobObservability(id: string, input: ExtractionJobObservabilityUpdate) {
+      const update: TablesUpdate<"extraction_jobs"> = {};
+      if ("traceId" in input) update.trace_id = input.traceId;
+      if ("attemptId" in input) update.attempt_id = input.attemptId;
+      if ("lastStage" in input) update.last_stage = input.lastStage;
+      if ("providerRequestId" in input) update.provider_request_id = input.providerRequestId;
+      if ("providerLatencyMs" in input) update.provider_latency_ms = input.providerLatencyMs;
+      if ("providerUsage" in input) update.provider_usage = input.providerUsage;
+
+      if (Object.keys(update).length === 0) return;
+      const { error } = await db.from("extraction_jobs").update(update).eq("id", id);
+      if (error) dbError(error.message);
+    },
+
+    async recordExtractionJobEvent(input: RecordExtractionJobEventInput) {
+      const row: TablesInsert<"extraction_job_events"> = {
+        trace_id: input.traceId,
+        job_id: input.jobId ?? null,
+        upload_id: input.uploadId ?? null,
+        trip_id: input.tripId,
+        attempt_id: input.attemptId ?? null,
+        event: input.event,
+        stage: input.stage ?? null,
+        status: input.status ?? null,
+        provider: input.provider ?? null,
+        model: input.model ?? null,
+        duration_ms: input.durationMs ?? null,
+        error_message: input.errorMessage ?? null,
+        metadata: input.metadata ?? {}
+      };
+      const { data, error } = await db.from("extraction_job_events").insert(row).select("*").single();
+      return requireData(data as Tables<"extraction_job_events"> | null, error);
     },
 
     async claimExtractionJob(id: string) {

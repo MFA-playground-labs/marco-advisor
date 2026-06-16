@@ -159,36 +159,85 @@ export type Database = {
       };
       extraction_jobs: {
         Row: {
+          attempt_id: string | null;
           completed_at: string | null;
           created_at: string;
           error_message: string | null;
           id: string;
+          last_stage: string | null;
           model: string | null;
           provider: string;
+          provider_latency_ms: number | null;
+          provider_request_id: string | null;
+          provider_usage: Json;
           raw_result: Json;
           started_at: string | null;
           status: string;
+          trace_id: string | null;
           trip_id: string;
           updated_at: string;
           upload_id: string;
           warnings: string[];
         };
         Insert: {
+          attempt_id?: string | null;
           completed_at?: string | null;
           created_at?: string;
           error_message?: string | null;
           id?: string;
+          last_stage?: string | null;
           model?: string | null;
           provider?: string;
+          provider_latency_ms?: number | null;
+          provider_request_id?: string | null;
+          provider_usage?: Json;
           raw_result?: Json;
           started_at?: string | null;
           status: string;
+          trace_id?: string | null;
           trip_id: string;
           updated_at?: string;
           upload_id: string;
           warnings?: string[];
         };
         Update: Partial<Database["public"]["Tables"]["extraction_jobs"]["Insert"]>;
+      };
+      extraction_job_events: {
+        Row: {
+          attempt_id: string | null;
+          created_at: string;
+          duration_ms: number | null;
+          error_message: string | null;
+          event: string;
+          id: string;
+          job_id: string | null;
+          metadata: Json;
+          model: string | null;
+          provider: string | null;
+          stage: string | null;
+          status: string | null;
+          trace_id: string;
+          trip_id: string;
+          upload_id: string | null;
+        };
+        Insert: {
+          attempt_id?: string | null;
+          created_at?: string;
+          duration_ms?: number | null;
+          error_message?: string | null;
+          event: string;
+          id?: string;
+          job_id?: string | null;
+          metadata?: Json;
+          model?: string | null;
+          provider?: string | null;
+          stage?: string | null;
+          status?: string | null;
+          trace_id: string;
+          trip_id: string;
+          upload_id?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["extraction_job_events"]["Insert"]>;
       };
       profiles: {
         Row: {
@@ -297,6 +346,7 @@ export type Database = {
           owner_id: string;
           status: string;
           storage_path: string;
+          trace_id: string | null;
           trip_id: string;
           updated_at: string;
         };
@@ -308,6 +358,7 @@ export type Database = {
           owner_id: string;
           status: string;
           storage_path: string;
+          trace_id?: string | null;
           trip_id: string;
           updated_at?: string;
         };

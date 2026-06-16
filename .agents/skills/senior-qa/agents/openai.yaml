@@ -1,0 +1,4 @@
+interface:
+  display_name: "Senior QA"
+  short_description: "QA strategy for observable end-to-end quality"
+  default_prompt: "Use $senior-qa to test this completed feature for correctness, usability, traceability, and release readiness."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Product Leader"
+  short_description: "CPO lens for user-first product decisions"
+  default_prompt: "Use $product-leader to review this feature for usability, customer value, and product tradeoffs."

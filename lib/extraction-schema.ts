@@ -17,7 +17,7 @@ export const extractedBookingSchema = z.object({
   missing_fields: z.array(z.string()).default([]),
   source_pages: z.array(z.number().int().positive()).default([]),
   source_snippets: z.array(z.string()).default([]),
-  extraction_method: z.enum(["rules", "haiku", "manual"]).default("haiku"),
+  extraction_method: z.enum(["rules", "haiku", "openai", "manual"]).default("haiku"),
   notes: z.string().nullable().default(null)
 });
 
@@ -97,7 +97,7 @@ export const extractionJsonSchema = {
             missing_fields: { type: "array", items: { type: "string" } },
             source_pages: { type: "array", items: { type: "number" } },
             source_snippets: { type: "array", items: { type: "string" } },
-            extraction_method: { type: "string", enum: ["rules", "haiku", "manual"] },
+            extraction_method: { type: "string", enum: ["rules", "haiku", "openai", "manual"] },
             notes: { type: ["string", "null"] }
           }
         }

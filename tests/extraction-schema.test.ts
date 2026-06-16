@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractionResultSchema } from "@/lib/extraction-schema";
+import { extractedBookingSchema, extractionJsonSchema, extractionResultSchema } from "@/lib/extraction-schema";
 
 describe("extractionResultSchema", () => {
   it("accepts reviewable booking candidates without inventing required data", () => {
@@ -45,5 +45,18 @@ describe("extractionResultSchema", () => {
         warnings: []
       })
     ).toThrow();
+  });
+
+  it("accepts OpenAI as an extraction method in runtime and JSON schemas", () => {
+    const booking = extractedBookingSchema.parse({
+      booking_type: "hotel",
+      title: "OpenAI extracted hotel",
+      extraction_method: "openai"
+    });
+
+    expect(booking.extraction_method).toBe("openai");
+    expect(
+      extractionJsonSchema.schema.properties.bookings.items.properties.extraction_method.enum
+    ).toContain("openai");
   });
 });

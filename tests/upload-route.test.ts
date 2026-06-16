@@ -65,14 +65,16 @@ describe("POST /api/upload", () => {
         tripName: "Paris",
         file: expect.any(File)
       }),
-      {
+      expect.objectContaining({
         repo: { repo: true },
-        observability: { interactionId: "interaction-1" }
-      }
+        dispatch: expect.any(Function),
+        observability: { traceId: "interaction-1", interactionId: "interaction-1" }
+      })
     );
     expect(consoleInfo).toHaveBeenCalledWith(
       "marco.upload_request_received",
       expect.objectContaining({
+        trace_id: "interaction-1",
         interaction_id: "interaction-1",
         content_type: "application/pdf",
         file_extension: "pdf",
@@ -92,9 +94,58 @@ describe("POST /api/upload", () => {
     expect(consoleWarn).toHaveBeenCalledWith(
       "marco.upload_validation_failed",
       expect.objectContaining({
+        trace_id: "interaction-1",
         interaction_id: "interaction-1",
         reason: "missing_file"
       })
     );
+  });
+
+  it("generates a trace id when the client header is missing", async () => {
+    const formData = new FormData();
+    formData.set("file", new File(["pdf"], "booking.pdf", { type: "application/pdf" }));
+    mocks.createSupabaseServerClient.mockResolvedValue({});
+    mocks.createSupabaseRepository.mockReturnValue({ repo: true });
+    mocks.uploadEvidence.mockResolvedValue({ upload: { id: "upload-1" }, job: { id: "job-1" }, dispatched: true });
+
+    const response = await POST(
+      new Request("https://example.com/api/upload", {
+        method: "POST",
+        body: formData
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(mocks.uploadEvidence).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        observability: {
+          traceId: expect.stringMatching(/^[0-9a-f-]{36}$/),
+          interactionId: expect.stringMatching(/^[0-9a-f-]{36}$/)
+        },
+        dispatch: expect.any(Function)
+      })
+    );
+  });
+
+  it("uses the n8n dispatcher path when configured", async () => {
+    const previousProvider = process.env.EXTRACTION_PROVIDER;
+    process.env.EXTRACTION_PROVIDER = "n8n";
+    const formData = new FormData();
+    formData.set("file", new File(["pdf"], "booking.pdf", { type: "application/pdf" }));
+    mocks.createSupabaseServerClient.mockResolvedValue({});
+    mocks.createSupabaseRepository.mockReturnValue({ repo: true });
+    mocks.uploadEvidence.mockResolvedValue({ upload: { id: "upload-1" }, job: { id: "job-1" }, dispatched: true });
+
+    const response = await POST(uploadRequest(formData));
+
+    expect(response.status).toBe(200);
+    expect(mocks.uploadEvidence).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        dispatch: undefined
+      })
+    );
+    process.env.EXTRACTION_PROVIDER = previousProvider;
   });
 });

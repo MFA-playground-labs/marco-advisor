@@ -3,7 +3,7 @@ export type BookingStatus = "pending_review" | "confirmed" | "cancelled" | "reje
 export type IssueSeverity = "critical" | "high" | "medium" | "low";
 export type IssueStatus = "unresolved" | "in_progress" | "resolved" | "risk_accepted" | "dismissed";
 export type ExtractionJobStatus = "queued" | "processing" | "succeeded" | "failed";
-export type ExtractionMethod = "rules" | "haiku" | "manual";
+export type ExtractionMethod = "rules" | "haiku" | "openai" | "manual";
 
 export type Trip = {
   id: string;
@@ -65,6 +65,7 @@ export type UploadRecord = {
   content_type: string;
   storage_path: string;
   status: "uploaded" | "extracting" | "review_ready" | "failed";
+  trace_id?: string | null;
   created_at?: string;
 };
 
@@ -75,6 +76,12 @@ export type ExtractionJob = {
   status: ExtractionJobStatus;
   provider?: string;
   model?: string | null;
+  trace_id?: string | null;
+  attempt_id?: string | null;
+  last_stage?: string | null;
+  provider_request_id?: string | null;
+  provider_latency_ms?: number | null;
+  provider_usage?: unknown;
   error_message: string | null;
   warnings?: string[];
   raw_result?: unknown;

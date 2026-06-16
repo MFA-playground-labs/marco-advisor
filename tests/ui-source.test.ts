@@ -58,6 +58,12 @@ describe("UI source contracts", () => {
     expect(pipeline).toContain("job.warnings");
     expect(pipeline).toContain("jobCandidates.length");
     expect(pipeline).toContain("job.status === \"failed\"");
+    expect(pipeline).toContain("job.trace_id");
+    expect(pipeline).toContain("job.attempt_id");
+    expect(pipeline).toContain("job.last_stage");
+    expect(pipeline).toContain("job.provider_request_id");
+    expect(pipeline).toContain("job.provider_latency_ms");
+    expect(pipeline).toContain("isRetryableJob(job)");
   });
 
   it("keeps archived feature specs out of the active feature index", () => {

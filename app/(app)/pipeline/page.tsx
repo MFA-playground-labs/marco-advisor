@@ -15,6 +15,8 @@ export default async function PipelinePage() {
     );
   }
 
+  const report = summarizeExtractionOperations(snapshot.jobs);
+
   return (
     <>
       <PageHeader
@@ -28,6 +30,14 @@ export default async function PipelinePage() {
       />
 
       <section className="space-y-4">
+        <div className="grid gap-3 md:grid-cols-5">
+          <Metric label="Queued" value={report.queued} />
+          <Metric label="Processing" value={report.processing} />
+          <Metric label="Stale" value={report.staleProcessing} tone={report.staleProcessing > 0 ? "red" : "slate"} />
+          <Metric label="Failed" value={report.failed} tone={report.failed > 0 ? "red" : "slate"} />
+          <Metric label="Warnings" value={report.warningCount} tone={report.warningCount > 0 ? "gold" : "slate"} />
+        </div>
+
         {snapshot.uploads.length === 0 ? (
           <Card className="p-6 text-sm text-slate-500">Upload evidence to see the ingestion flow.</Card>
         ) : (
@@ -77,6 +87,16 @@ export default async function PipelinePage() {
                               <p className="mt-2 text-sm text-slate-600">
                                 {pages.length} extracted pages · {jobCandidates.length} candidates
                               </p>
+                              <dl className="mt-3 grid gap-2 text-xs text-slate-600 sm:grid-cols-2">
+                                <Detail label="Trace" value={job.trace_id} />
+                                <Detail label="Attempt" value={job.attempt_id} />
+                                <Detail label="Stage" value={job.last_stage} />
+                                <Detail label="Model" value={job.model} />
+                                <Detail label="Provider request" value={job.provider_request_id} />
+                                <Detail label="Latency" value={formatLatency(job.provider_latency_ms)} />
+                                <Detail label="Usage" value={formatUsage(job.provider_usage)} />
+                                <Detail label="Retryable" value={isRetryableJob(job) ? "Yes" : "No"} />
+                              </dl>
                               {job.error_message && (
                                 <p className={job.status === "failed" ? "mt-2 text-sm font-semibold text-red-600" : "mt-2 text-sm font-semibold text-amber-700"}>
                                   {job.error_message}
@@ -156,4 +176,67 @@ export default async function PipelinePage() {
       </section>
     </>
   );
+}
+
+function Metric({
+  label,
+  value,
+  tone = "slate"
+}: {
+  label: string;
+  value: number;
+  tone?: "slate" | "gold" | "red";
+}) {
+  const toneClass = tone === "red" ? "text-red-600" : tone === "gold" ? "text-amber-700" : "text-slate-900";
+  return (
+    <div className="rounded-lg border border-line bg-white px-4 py-3">
+      <p className="text-xs font-black uppercase text-slate-500">{label}</p>
+      <p className={`mt-1 text-2xl font-black ${toneClass}`}>{value}</p>
+    </div>
+  );
+}
+
+function Detail({ label, value }: { label: string; value?: string | null }) {
+  return (
+    <div className="min-w-0">
+      <dt className="font-black uppercase text-slate-400">{label}</dt>
+      <dd className="mt-0.5 break-all font-semibold text-slate-700">{value || "Not recorded"}</dd>
+    </div>
+  );
+}
+
+function summarizeExtractionOperations(jobs: Awaited<ReturnType<typeof getPipelineSnapshot>>["jobs"]) {
+  return {
+    queued: jobs.filter((job) => job.status === "queued").length,
+    processing: jobs.filter((job) => job.status === "processing").length,
+    staleProcessing: jobs.filter((job) => job.status === "processing" && isStaleProcessingJob(job.started_at)).length,
+    failed: jobs.filter((job) => job.status === "failed").length,
+    warningCount: jobs.reduce((count, job) => count + (job.warnings?.length ?? 0), 0)
+  };
+}
+
+function isRetryableJob(job: Awaited<ReturnType<typeof getPipelineSnapshot>>["jobs"][number]) {
+  if (job.status === "queued" || job.status === "failed") return true;
+  return job.status === "processing" && isStaleProcessingJob(job.started_at);
+}
+
+function isStaleProcessingJob(startedAt: string | null | undefined) {
+  if (!startedAt) return true;
+  const startedAtMs = Date.parse(startedAt);
+  if (!Number.isFinite(startedAtMs)) return true;
+  return Date.now() - startedAtMs >= 15 * 60 * 1000;
+}
+
+function formatLatency(ms: number | null | undefined) {
+  if (ms === null || ms === undefined) return null;
+  return `${ms} ms`;
+}
+
+function formatUsage(usage: unknown) {
+  if (!usage || typeof usage !== "object") return null;
+  const values = Object.entries(usage as Record<string, unknown>)
+    .filter(([, value]) => typeof value === "number" || typeof value === "string")
+    .slice(0, 3)
+    .map(([key, value]) => `${key}: ${value}`);
+  return values.length > 0 ? values.join(" · ") : null;
 }

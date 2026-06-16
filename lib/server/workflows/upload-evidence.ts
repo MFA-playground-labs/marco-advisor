@@ -5,8 +5,16 @@ import {
   validateUploadFile
 } from "@/lib/domain/upload";
 import { dispatchExtractionJob } from "@/lib/server/extraction-dispatch";
+import { getExtractionModel, getExtractionProvider } from "@/lib/server/extraction-provider";
 import type { SupabaseRepository } from "@/lib/server/supabase-repository";
 import { WorkflowError, errorMessage } from "@/lib/server/errors";
+import {
+  createTraceContext,
+  elapsedMs,
+  logWorkflowEvent,
+  recordExtractionEvent,
+  safeErrorMessage
+} from "@/lib/server/workflow-observability";
 import type { UploadRecord } from "@/lib/types";
 
 export type UploadEvidenceInput = {
@@ -30,33 +38,41 @@ export type UploadEvidenceDeps = {
     | "createExtractionJob"
     | "markUploadStatus"
     | "markExtractionJob"
+    | "recordExtractionJobEvent"
   >;
   dispatch?: typeof dispatchExtractionJob;
   observability?: {
+    traceId?: string;
     interactionId?: string;
   };
 };
 
 export async function uploadEvidence(input: UploadEvidenceInput, deps: UploadEvidenceDeps) {
   const startedAt = Date.now();
+  const traceContext = createTraceContext({
+    traceId: deps.observability?.traceId,
+    interactionId: deps.observability?.interactionId
+  });
   const logContext = {
-    interaction_id: deps.observability?.interactionId,
     content_type: input.file.type || "application/octet-stream",
     file_extension: fileExtension(input.file.name),
     size_bytes: input.file.size
   };
   const validationError = validateUploadFile(input.file);
   if (validationError) {
-    console.warn("marco.upload_validation_failed", {
+    logWorkflowEvent("marco.upload_validation_failed", traceContext, {
       ...logContext,
       reason: validationError,
-      duration_ms: elapsedMs(startedAt)
+      status: "failed",
+      durationMs: elapsedMs(startedAt)
     });
     throw new WorkflowError(validationError, 400);
   }
 
   const repo = deps.repo;
   const dispatch = deps.dispatch ?? dispatchExtractionJob;
+  const provider = getExtractionProvider();
+  const model = getExtractionModel(provider);
   const user = await repo.requireUser("uploading");
   let trip = await repo.getActiveTrip(user.id);
 
@@ -78,10 +94,10 @@ export async function uploadEvidence(input: UploadEvidenceInput, deps: UploadEvi
 
   try {
     await repo.uploadFile(storagePath, input.file, input.file.type);
-    console.info("marco.upload_storage_completed", {
+    const tripTraceContext = { ...traceContext, tripId: trip.id, userId: user.id };
+    logWorkflowEvent("marco.upload_storage_completed", tripTraceContext, {
       ...logContext,
-      trip_id: trip.id,
-      duration_ms: elapsedMs(startedAt)
+      durationMs: elapsedMs(startedAt)
     });
     stage = "upload_record";
     upload = await repo.createUploadRecord({
@@ -90,44 +106,65 @@ export async function uploadEvidence(input: UploadEvidenceInput, deps: UploadEvi
       filename: input.file.name,
       content_type: input.file.type,
       storage_path: storagePath,
-      status: "uploaded"
+      status: "uploaded",
+      trace_id: traceContext.traceId
     });
-    console.info("marco.upload_record_created", {
+    const uploadTraceContext = { ...tripTraceContext, uploadId: upload.id };
+    logWorkflowEvent("marco.upload_record_created", uploadTraceContext, {
       ...logContext,
-      upload_id: upload.id,
-      trip_id: trip.id,
       status: upload.status,
-      duration_ms: elapsedMs(startedAt)
+      durationMs: elapsedMs(startedAt)
     });
     stage = "extraction_job";
     job = await repo.createExtractionJob({
       upload_id: upload.id,
       trip_id: trip.id,
       status: "queued",
-      provider: process.env.EXTRACTION_PROVIDER ?? "n8n",
-      model: process.env.EXTRACTION_FALLBACK_MODEL ?? "claude-haiku"
+      provider,
+      model,
+      trace_id: traceContext.traceId
     });
-    console.info("marco.upload_extraction_job_created", {
+    const jobTraceContext = {
+      ...uploadTraceContext,
+      jobId: job.id,
+      provider: job.provider,
+      model: job.model
+    };
+    logWorkflowEvent("marco.upload_extraction_job_created", jobTraceContext, {
       ...logContext,
-      upload_id: upload.id,
-      job_id: job.id,
-      trip_id: trip.id,
       status: job.status,
-      duration_ms: elapsedMs(startedAt)
+      durationMs: elapsedMs(startedAt)
+    });
+    await recordExtractionEvent(repo, jobTraceContext, {
+      event: "marco.upload_extraction_job_created",
+      stage: "extraction_job",
+      status: job.status,
+      durationMs: elapsedMs(startedAt),
+      metadata: {
+        content_type: logContext.content_type,
+        file_extension: logContext.file_extension,
+        size_bytes: logContext.size_bytes
+      }
     });
     migrationWarning = "migration_warning" in job ? String(job.migration_warning) : null;
 
     stage = "dispatch";
     const dispatched = await dispatch({ jobId: job.id, uploadId: upload.id, tripId: trip.id });
     if (!dispatched.ok && dispatched.warning) {
-      console.warn("marco.upload_dispatch_failed", {
+      const dispatchErrorMessage = safeErrorMessage(dispatched.warning);
+      logWorkflowEvent("marco.upload_dispatch_failed", jobTraceContext, {
         ...logContext,
-        upload_id: upload.id,
-        job_id: job.id,
-        trip_id: trip.id,
         dispatched: false,
-        error_message: truncateErrorMessage(dispatched.warning),
-        duration_ms: elapsedMs(startedAt)
+        errorMessage: dispatchErrorMessage,
+        durationMs: elapsedMs(startedAt)
+      });
+      await recordExtractionEvent(repo, jobTraceContext, {
+        event: "marco.upload_dispatch_failed",
+        stage: "dispatch",
+        status: "queued",
+        durationMs: elapsedMs(startedAt),
+        errorMessage: dispatchErrorMessage,
+        metadata: { dispatched: false }
       });
       await repo.markExtractionJob(
         job.id,
@@ -139,13 +176,17 @@ export async function uploadEvidence(input: UploadEvidenceInput, deps: UploadEvi
             }
       );
     } else {
-      console.info("marco.upload_dispatch_completed", {
+      logWorkflowEvent("marco.upload_dispatch_completed", jobTraceContext, {
         ...logContext,
-        upload_id: upload.id,
-        job_id: job.id,
-        trip_id: trip.id,
         dispatched: true,
-        duration_ms: elapsedMs(startedAt)
+        durationMs: elapsedMs(startedAt)
+      });
+      await recordExtractionEvent(repo, jobTraceContext, {
+        event: "marco.upload_dispatch_completed",
+        stage: "dispatch",
+        status: "queued",
+        durationMs: elapsedMs(startedAt),
+        metadata: { dispatched: true }
       });
     }
 
@@ -157,14 +198,29 @@ export async function uploadEvidence(input: UploadEvidenceInput, deps: UploadEvi
     };
   } catch (error) {
     const message = errorMessage(error, "Extraction failed.");
-    console.warn("marco.upload_workflow_failed", {
+    const failureContext = {
+      ...traceContext,
+      uploadId: upload?.id,
+      jobId: job?.id,
+      tripId: trip.id,
+      userId: user.id,
+      provider: job?.provider,
+      model: job?.model
+    };
+    const workflowErrorMessage = safeErrorMessage(message);
+    logWorkflowEvent("marco.upload_workflow_failed", failureContext, {
       ...logContext,
-      upload_id: upload?.id,
-      job_id: job?.id,
-      trip_id: trip.id,
       stage,
-      error_message: truncateErrorMessage(message),
-      duration_ms: elapsedMs(startedAt)
+      status: "failed",
+      errorMessage: workflowErrorMessage,
+      durationMs: elapsedMs(startedAt)
+    });
+    await recordExtractionEvent(repo, failureContext, {
+      event: "marco.upload_workflow_failed",
+      stage,
+      status: "failed",
+      durationMs: elapsedMs(startedAt),
+      errorMessage: workflowErrorMessage
     });
     if (upload) {
       const uploadId = upload.id;
@@ -195,15 +251,7 @@ async function settle(action: () => Promise<void>) {
   }
 }
 
-function elapsedMs(startedAt: number) {
-  return Date.now() - startedAt;
-}
-
 function fileExtension(filename: string) {
   const extension = filename.split(".").pop();
   return extension && extension !== filename ? extension.toLowerCase().slice(0, 16) : "";
-}
-
-function truncateErrorMessage(message: string) {
-  return message.slice(0, 240);
 }
