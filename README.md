@@ -29,7 +29,7 @@ Upload-first travel intelligence for private trips. Marco shows a public read-on
    ```bash
    NEXT_PUBLIC_SUPABASE_URL=...
    NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=...
-   OPENAI_API_KEY=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
+   OPENAI_API_KEY=
    OPENAI_EXTRACTION_MODEL=gpt-4.1-mini
    OPENAI_ADVISOR_MODEL=gpt-4.1-mini
    SUPABASE_SERVICE_ROLE_KEY=... # optional; only needed for admin/server-only jobs
