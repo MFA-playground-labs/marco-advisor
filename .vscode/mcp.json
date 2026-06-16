@@ -2,7 +2,17 @@
 	"servers": {
 		"supabase": {
 			"type": "http",
-			"url": "https://mcp.supabase.com/mcp?project_ref=ixbhpsgcidxmcqbmeuec&read_only=true&features=docs,database,debugging,development"
+			"url": "https://mcp.supabase.com/mcp?project_ref=ixbhpsgcidxmcqbmeuec"
+		},
+		"my-mcp-server-faa004a5": {
+			"type": "stdio",
+			"command": "enter",
+			"args": []
+		},
+		"my-mcp-server-9e4add39": {
+			"type": "stdio",
+			"command": "Enter",
+			"args": []
 		}
 	},
 	"inputs": []
