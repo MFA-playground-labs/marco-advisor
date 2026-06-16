@@ -5,7 +5,7 @@ import {
   validateUploadFile
 } from "@/lib/domain/upload";
 import { dispatchExtractionJob } from "@/lib/server/extraction-dispatch";
-import { getExtractionModel, getExtractionProvider } from "@/lib/server/extraction-provider";
+import { getExtractionModel, getExtractionProvider, getExtractionProviderConfigError } from "@/lib/server/extraction-provider";
 import type { SupabaseRepository } from "@/lib/server/supabase-repository";
 import { WorkflowError, errorMessage } from "@/lib/server/errors";
 import {
@@ -73,6 +73,17 @@ export async function uploadEvidence(input: UploadEvidenceInput, deps: UploadEvi
   const dispatch = deps.dispatch ?? dispatchExtractionJob;
   const provider = getExtractionProvider();
   const model = getExtractionModel(provider);
+  const configError = getExtractionProviderConfigError(provider);
+  if (configError) {
+    logWorkflowEvent("marco.upload_config_failed", traceContext, {
+      ...logContext,
+      provider,
+      model,
+      status: "failed",
+      durationMs: elapsedMs(startedAt)
+    });
+    throw new WorkflowError(configError, 500);
+  }
   const user = await repo.requireUser("uploading");
   let trip = await repo.getActiveTrip(user.id);
 

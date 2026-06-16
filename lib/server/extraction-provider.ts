@@ -12,3 +12,11 @@ export function getExtractionModel(provider = getExtractionProvider()) {
     ? process.env.OPENAI_EXTRACTION_MODEL ?? defaultOpenAiExtractionModel
     : process.env.EXTRACTION_FALLBACK_MODEL ?? defaultN8nExtractionModel;
 }
+
+export function getExtractionProviderConfigError(provider = getExtractionProvider()) {
+  if (provider === "openai" && !process.env.OPENAI_API_KEY) {
+    return "OPENAI_API_KEY is required when EXTRACTION_PROVIDER=openai.";
+  }
+
+  return null;
+}

@@ -37,6 +37,8 @@ Upload-first travel intelligence for private trips. Marco shows a public read-on
 
    Older Supabase projects may expose `NEXT_PUBLIC_SUPABASE_ANON_KEY`; the app supports either `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` or `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
 
+   For deployed uploads, set `OPENAI_API_KEY` in Vercel Project Settings under Environment Variables for the production environment. Do not prefix it with `NEXT_PUBLIC_`; upload extraction reads it only from server-side runtime env.
+
 3. Apply Marco's replacement Supabase migration in `supabase/migrations/20260607160000_upload_first_mvp.sql`.
 
    Use the hosted Supabase SQL Editor for the connected project. This migration replaces the earlier broad MVP schema with Marco's lightweight baseline, seeds the read-only `demo_trip_snapshots` row, creates private travel tables, applies RLS policies, and creates the private `trip-uploads` storage bucket. Current Supabase data is treated as disposable for this baseline.

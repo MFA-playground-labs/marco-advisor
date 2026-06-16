@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExtractionResult } from "@/lib/extraction-schema";
 import { bookingInsertFromCandidate } from "@/lib/domain/booking-mapping";
 import { confidenceCategory, sourceSnippetPreview } from "@/lib/domain/review-quality";
@@ -150,6 +150,20 @@ describe("upload domain helpers", () => {
 });
 
 describe("uploadEvidence", () => {
+  const previousOpenAiApiKey = process.env.OPENAI_API_KEY;
+
+  beforeEach(() => {
+    process.env.OPENAI_API_KEY = "test-openai-key";
+  });
+
+  afterEach(() => {
+    if (previousOpenAiApiKey === undefined) {
+      delete process.env.OPENAI_API_KEY;
+    } else {
+      process.env.OPENAI_API_KEY = previousOpenAiApiKey;
+    }
+  });
+
   it("stores the upload, creates a queued job, and dispatches it", async () => {
     const repo = uploadRepo();
     const dispatch = vi.fn().mockResolvedValue({ ok: true });
@@ -162,6 +176,25 @@ describe("uploadEvidence", () => {
     expect(repo.createUploadRecord).toHaveBeenCalledWith(expect.objectContaining({ status: "uploaded" }));
     expect(repo.createExtractionJob).toHaveBeenCalledWith(expect.objectContaining({ status: "queued", provider: "openai", model: "gpt-4.1-mini" }));
     expect(dispatch).toHaveBeenCalledWith({ jobId: job.id, uploadId: upload.id, tripId: trip.id });
+  });
+
+  it("fails before storage writes when OpenAI extraction is selected without an API key", async () => {
+    delete process.env.OPENAI_API_KEY;
+    const repo = uploadRepo();
+    const dispatch = vi.fn().mockResolvedValue({ ok: true });
+
+    await expect(
+      uploadEvidence({ file: textFile(), tripName: "Italy", destination: "Italy", startsOn: "", endsOn: "" }, { repo, dispatch })
+    ).rejects.toMatchObject({
+      message: "OPENAI_API_KEY is required when EXTRACTION_PROVIDER=openai.",
+      status: 500
+    });
+
+    expect(repo.requireUser).not.toHaveBeenCalled();
+    expect(repo.uploadFile).not.toHaveBeenCalled();
+    expect(repo.createUploadRecord).not.toHaveBeenCalled();
+    expect(repo.createExtractionJob).not.toHaveBeenCalled();
+    expect(dispatch).not.toHaveBeenCalled();
   });
 
   it("uses n8n provider metadata when the fallback provider is configured", async () => {
