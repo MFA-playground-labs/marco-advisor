@@ -42,7 +42,7 @@ export async function completeExtraction(repo: CompleteExtractionDeps, payload: 
     jobId: parsed.job_id,
     status: parsed.status,
     pages: toJsonValue(parsed.pages),
-    trip: toJsonValue(parsed.trip),
+    trip: toJsonValue({ name: null, destination: null, starts_on: null, ends_on: null, travelers: parsed.trip.travelers }),
     bookings: toJsonValue(parsed.bookings),
     warnings: parsed.warnings,
     provider: parsed.provider,

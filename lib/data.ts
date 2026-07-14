@@ -1,7 +1,8 @@
-import type { PipelineSnapshot, TripSnapshot } from "@/lib/types";
+import type { PipelineSnapshot, Trip, TripList, TripSnapshot } from "@/lib/types";
 import { createSupabaseServerClient } from "@/lib/supabase";
 import { calculateFinancialExposure, calculateReadiness } from "@/lib/scanner";
 import { createSupabaseRepository } from "@/lib/server/supabase-repository";
+import { getSelectedTripId } from "@/lib/server/trip-selection";
 
 export async function getActiveTripSnapshot(): Promise<TripSnapshot> {
   const supabase = await createSupabaseServerClient();
@@ -12,7 +13,10 @@ export async function getActiveTripSnapshot(): Promise<TripSnapshot> {
 
   if (!user) return loadDemoTripSnapshot(repo);
 
-  const snapshot = await repo.getTripSnapshotForUser(user);
+  const selectedTripId = await getSelectedTripId();
+  const snapshot = selectedTripId
+    ? (await repo.getTripSnapshotForUser(user, selectedTripId)) ?? (await repo.getTripSnapshotForUser(user))
+    : await repo.getTripSnapshotForUser(user);
 
   return snapshot ?? loadDemoTripSnapshot(repo);
 }
@@ -25,8 +29,34 @@ export async function getPipelineSnapshot(): Promise<PipelineSnapshot> {
   const user = await repo.getCurrentUser();
   if (!user) return emptyPipelineSnapshot();
 
-  const snapshot = await repo.getPipelineSnapshotForUser(user);
+  const selectedTripId = await getSelectedTripId();
+  const snapshot = selectedTripId
+    ? (await repo.getPipelineSnapshotForUser(user, selectedTripId)) ?? (await repo.getPipelineSnapshotForUser(user))
+    : await repo.getPipelineSnapshotForUser(user);
   return snapshot ?? emptyPipelineSnapshot();
+}
+
+export async function getTripList(): Promise<TripList> {
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) return emptyTripList();
+  const repo = createSupabaseRepository(supabase);
+
+  const user = await repo.getCurrentUser();
+  if (!user) return emptyTripList();
+
+  const selectedTripId = await getSelectedTripId();
+  const trips = await repo.listTripsForUser(user.id);
+  const active = trips.filter((trip) => !trip.archived_at);
+  const archived = trips.filter((trip) => trip.archived_at);
+  const selectedIsActive = Boolean(selectedTripId && active.some((trip) => trip.id === selectedTripId));
+  const selectedActiveTripId = selectedIsActive ? selectedTripId : active[0]?.id ?? null;
+
+  return {
+    active,
+    archived,
+    past: active.filter(isPastTrip),
+    selectedTripId: selectedActiveTripId
+  };
 }
 
 async function loadDemoTripSnapshot(repo: ReturnType<typeof createSupabaseRepository>): Promise<TripSnapshot> {
@@ -66,6 +96,15 @@ export function emptyPipelineSnapshot(): PipelineSnapshot {
   };
 }
 
+export function emptyTripList(): TripList {
+  return {
+    active: [],
+    archived: [],
+    past: [],
+    selectedTripId: null
+  };
+}
+
 export function summarizeSnapshot(snapshot: TripSnapshot) {
   const issues = snapshot.issues;
   const exposure = calculateFinancialExposure(snapshot.bookings, issues);
@@ -81,4 +120,11 @@ export function summarizeSnapshot(snapshot: TripSnapshot) {
     nightsCount: confirmed.filter((booking) => booking.type === "hotel").length,
     needsUpload: snapshot.uploads.length === 0 && snapshot.bookings.length === 0 && snapshot.candidates.length === 0
   };
+}
+
+function isPastTrip(trip: Trip) {
+  if (!trip.ends_on) return false;
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+  return new Date(`${trip.ends_on}T00:00:00.000Z`) < today;
 }

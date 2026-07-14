@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   Bot,
@@ -14,13 +15,16 @@ import {
   Settings,
   Upload,
   Menu,
-  X
+  X,
+  BriefcaseBusiness
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { cn } from "@/lib/utils";
+import type { TripList } from "@/lib/types";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/trips", label: "Trips", icon: BriefcaseBusiness },
   { href: "/bookings", label: "Bookings", icon: ListChecks },
   { href: "/itinerary", label: "Itinerary", icon: Compass },
   { href: "/timeline", label: "Timeline", icon: CalendarDays },
@@ -30,9 +34,22 @@ const navItems = [
   { href: "/settings", label: "Settings", icon: Settings }
 ];
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({ children, tripList }: { children: React.ReactNode; tripList: TripList }) {
   const pathname = usePathname();
+  const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [isSelecting, startTransition] = useTransition();
+  const selectedTrip = tripList.active.find((trip) => trip.id === tripList.selectedTripId) ?? null;
+
+  function selectTrip(tripId: string) {
+    if (!tripId || tripId === tripList.selectedTripId) return;
+    startTransition(async () => {
+      const response = await fetch(`/api/trips/${tripId}/select`, { method: "POST" });
+      if (response.ok) {
+        router.refresh();
+      }
+    });
+  }
 
   return (
     <div className="min-h-screen bg-paper text-ink">
@@ -64,9 +81,40 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
 
         <div className="border-b border-white/10 px-6 py-5">
-          <div className="flex items-center justify-between rounded-md bg-white/5 px-3 py-3 text-sm font-semibold">
-            <span>Active trip</span>
-            <span className="text-slate-400">Upload driven</span>
+          <div className="rounded-md bg-white/5 p-3 text-sm">
+            <div className="flex items-center justify-between gap-3">
+              <span className="font-semibold text-slate-300">Active trip</span>
+              <Link href="/trips" className="text-xs font-black text-gold" onClick={() => setOpen(false)}>
+                Manage
+              </Link>
+            </div>
+            {tripList.active.length === 0 ? (
+              <Link href="/trips" className="mt-2 block truncate font-black text-white" onClick={() => setOpen(false)}>
+                Create a trip
+              </Link>
+            ) : (
+              <select
+                aria-label="Select active trip"
+                className="mt-2 w-full rounded-md border border-white/10 bg-sidebar px-2 py-2 font-bold text-white"
+                value={selectedTrip?.id ?? ""}
+                disabled={isSelecting}
+                onChange={(event) => selectTrip(event.target.value)}
+              >
+                {tripList.active.map((trip) => (
+                  <option key={trip.id} value={trip.id}>
+                    {trip.name}
+                  </option>
+                ))}
+              </select>
+            )}
+            <div className="mt-2 truncate text-xs text-slate-400">
+              {selectedTrip?.destination ?? "Destination TBD"}
+              {tripList.past.length > 0 && (
+                <Link href="/trips" className="ml-2 font-bold text-gold" onClick={() => setOpen(false)}>
+                  {tripList.past.length} past
+                </Link>
+              )}
+            </div>
           </div>
         </div>
 

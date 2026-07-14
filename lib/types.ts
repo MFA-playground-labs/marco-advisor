@@ -13,6 +13,8 @@ export type Trip = {
   starts_on: string | null;
   ends_on: string | null;
   created_at?: string;
+  updated_at?: string;
+  archived_at?: string | null;
 };
 
 export type Traveler = {
@@ -177,4 +179,11 @@ export type TripSnapshot = {
 export type PipelineSnapshot = TripSnapshot & {
   jobs: ExtractionJob[];
   pages: UploadPageText[];
+};
+
+export type TripList = {
+  active: Trip[];
+  archived: Trip[];
+  past: Trip[];
+  selectedTripId: string | null;
 };

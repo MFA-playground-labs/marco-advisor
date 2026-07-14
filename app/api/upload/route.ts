@@ -4,6 +4,7 @@ import { getExtractionProvider } from "@/lib/server/extraction-provider";
 import { createSupabaseServerClient } from "@/lib/supabase";
 import { errorMessage, errorStatus } from "@/lib/server/errors";
 import { createSupabaseRepository } from "@/lib/server/supabase-repository";
+import { getSelectedTripId } from "@/lib/server/trip-selection";
 import { runOpenAiExtractionJob } from "@/lib/server/workflows/run-openai-extraction-job";
 import { uploadEvidence } from "@/lib/server/workflows/upload-evidence";
 import { createTraceContext, elapsedMs, logWorkflowEvent } from "@/lib/server/workflow-observability";
@@ -43,9 +44,11 @@ export async function POST(request: Request) {
   });
 
   try {
+    const selectedTripId = await getSelectedTripId();
     const result = await uploadEvidence(
       {
         file,
+        tripId: selectedTripId,
         tripName: String(formData.get("tripName") || "").trim(),
         destination: String(formData.get("destination") || "").trim(),
         startsOn: String(formData.get("startsOn") || "").trim(),

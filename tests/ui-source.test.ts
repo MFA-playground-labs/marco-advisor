@@ -44,6 +44,23 @@ describe("UI source contracts", () => {
     expect(uploadWorkflow).toContain("marco.upload_workflow_failed");
   });
 
+  it("surfaces trip management and selected upload context", () => {
+    const appShell = source("components/app-shell.tsx");
+    const tripPage = source("app/(app)/trips/page.tsx");
+    const tripManager = source("components/trip-manager.tsx");
+    const uploadPanel = source("components/upload-panel.tsx");
+
+    expect(appShell).toContain("tripList");
+    expect(appShell).toContain("/api/trips/${tripId}/select");
+    expect(appShell).toContain("Manage");
+    expect(tripPage).toContain("TripManager");
+    expect(tripManager).toContain("Past Trip Cleanup");
+    expect(tripManager).toContain("Archived Trips");
+    expect(tripManager).toContain("/api/trips/${tripId}/archive");
+    expect(tripManager).toContain("/api/trips/${tripId}/restore");
+    expect(uploadPanel).toContain("Evidence will be added to");
+  });
+
   it("shows candidate evidence context in the review card", () => {
     const bookingCard = source("components/booking-card.tsx");
 

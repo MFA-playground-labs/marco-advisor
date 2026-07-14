@@ -19,6 +19,7 @@ import type { UploadRecord } from "@/lib/types";
 
 export type UploadEvidenceInput = {
   file: File;
+  tripId?: string | null;
   tripName: string;
   destination: string;
   startsOn: string;
@@ -30,6 +31,7 @@ export type UploadEvidenceDeps = {
     SupabaseRepository,
     | "requireUser"
     | "getActiveTrip"
+    | "getTripForOwner"
     | "createTrip"
     | "updateTrip"
     | "uploadFile"
@@ -85,7 +87,9 @@ export async function uploadEvidence(input: UploadEvidenceInput, deps: UploadEvi
     throw new WorkflowError(configError, 500);
   }
   const user = await repo.requireUser("uploading");
-  let trip = await repo.getActiveTrip(user.id);
+  let trip = input.tripId
+    ? await repo.getTripForOwner(user.id, input.tripId)
+    : await repo.getActiveTrip(user.id);
 
   if (!trip) {
     trip = await repo.createTrip({

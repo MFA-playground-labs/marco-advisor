@@ -3,10 +3,11 @@ import { WorkflowError } from "@/lib/server/errors";
 import type { SupabaseRepository } from "@/lib/server/supabase-repository";
 
 export async function runTripScan(
-  repo: Pick<SupabaseRepository, "requireUser" | "getActiveTrip" | "getBookingsForTrip" | "replaceTripIssues">
+  repo: Pick<SupabaseRepository, "requireUser" | "getActiveTrip" | "getTripForOwner" | "getBookingsForTrip" | "replaceTripIssues">,
+  tripId?: string | null
 ) {
   const user = await repo.requireUser("scanning trips");
-  const trip = await repo.getActiveTrip(user.id);
+  const trip = tripId ? await repo.getTripForOwner(user.id, tripId) : await repo.getActiveTrip(user.id);
   if (!trip) throw new WorkflowError("No active trip.", 404);
 
   const bookings = await repo.getBookingsForTrip(trip.id);

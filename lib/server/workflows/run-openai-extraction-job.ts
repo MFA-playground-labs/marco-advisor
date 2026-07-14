@@ -205,7 +205,13 @@ export async function runOpenAiExtractionJob(input: RunOpenAiExtractionJobInput)
       jobId: hydratedJob.id,
       status: "succeeded",
       pages: toJsonValue(prepared.pages),
-      trip: toJsonValue(extraction.result.trip),
+      trip: toJsonValue({
+        name: null,
+        destination: null,
+        starts_on: null,
+        ends_on: null,
+        travelers: extraction.result.trip.travelers
+      }),
       bookings: toJsonValue(extraction.result.bookings),
       warnings,
       provider,

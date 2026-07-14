@@ -9,6 +9,7 @@ const appPaths = [
   "/itinerary",
   "/pipeline",
   "/timeline",
+  "/trips",
   "/scanner",
   "/settings",
   "/upload"

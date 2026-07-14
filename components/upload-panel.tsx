@@ -6,7 +6,7 @@ import { UploadCloud } from "lucide-react";
 import { AlertNote, Card } from "@/components/ui";
 import { uploadAccept } from "@/lib/domain/upload";
 
-export function UploadPanel() {
+export function UploadPanel({ tripName }: { tripName?: string | null }) {
   const router = useRouter();
   const [status, setStatus] = useState<string>("");
   const [busy, setBusy] = useState(false);
@@ -97,6 +97,9 @@ export function UploadPanel() {
           <p className="mx-auto mt-2 max-w-2xl text-sm leading-6 text-slate-500">
             Add PDFs, text/HTML confirmations, or screenshots. Marco stores the original, queues extraction, and waits for your
             review before creating bookings.
+          </p>
+          <p className="mx-auto mt-3 max-w-2xl rounded-md bg-white px-3 py-2 text-sm font-bold text-slate-700">
+            {tripName ? `Evidence will be added to ${tripName}.` : "No active trip yet. This upload will create and select a new trip."}
           </p>
           <input
             className="mt-6 block w-full rounded-lg border border-line bg-white p-3 text-sm"

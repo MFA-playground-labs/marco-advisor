@@ -146,11 +146,39 @@ export function createSupabaseRepository(supabase: AppSupabaseClient) {
         .from("trips")
         .select("*")
         .eq("owner_id", ownerId)
+        .is("archived_at", null)
+        .order("updated_at", { ascending: false })
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
       if (error) dbError(error.message);
       return (data as Trip | null) ?? null;
+    },
+
+    async getTripForOwner(ownerId: string, tripId: string, options: { includeArchived?: boolean } = {}) {
+      let query = db
+        .from("trips")
+        .select("*")
+        .eq("owner_id", ownerId)
+        .eq("id", tripId);
+
+      if (!options.includeArchived) {
+        query = query.is("archived_at", null);
+      }
+
+      const { data, error } = await query.maybeSingle();
+      if (error) dbError(error.message);
+      return (data as Trip | null) ?? null;
+    },
+
+    async listTripsForUser(ownerId: string) {
+      const { data, error } = await db
+        .from("trips")
+        .select("*")
+        .eq("owner_id", ownerId)
+        .order("updated_at", { ascending: false })
+        .order("created_at", { ascending: false });
+      return listData(data as Trip[] | null, error);
     },
 
     async createTrip(input: TablesInsert<"trips">) {
@@ -161,6 +189,27 @@ export function createSupabaseRepository(supabase: AppSupabaseClient) {
     async updateTrip(id: string, input: TablesUpdate<"trips">) {
       const { error } = await db.from("trips").update(input).eq("id", id);
       if (error) dbError(error.message);
+    },
+
+    async updateOwnedTrip(ownerId: string, id: string, input: TablesUpdate<"trips">) {
+      const { data, error } = await db
+        .from("trips")
+        .update(input)
+        .eq("owner_id", ownerId)
+        .eq("id", id)
+        .select("*")
+        .maybeSingle();
+      if (error) dbError(error.message);
+      if (!data) dbError("Trip not found.", 404);
+      return data as Trip;
+    },
+
+    async archiveTrip(ownerId: string, id: string) {
+      return this.updateOwnedTrip(ownerId, id, { archived_at: new Date().toISOString() });
+    },
+
+    async restoreTrip(ownerId: string, id: string) {
+      return this.updateOwnedTrip(ownerId, id, { archived_at: null });
     },
 
     async uploadFile(storagePath: string, file: File, contentType: string) {
@@ -368,10 +417,16 @@ export function createSupabaseRepository(supabase: AppSupabaseClient) {
       return data.snapshot as Partial<TripSnapshot>;
     },
 
-    async getTripSnapshotForUser(user: User) {
-      const trip = await this.getActiveTrip(user.id);
+    async getTripSnapshotForUser(user: User, tripId?: string | null) {
+      const trip = tripId
+        ? await this.getTripForOwner(user.id, tripId)
+        : await this.getActiveTrip(user.id);
       if (!trip) return null;
 
+      return this.getTripSnapshot(trip);
+    },
+
+    async getTripSnapshot(trip: Trip) {
       const [travelers, bookings, segments, candidates, issues, uploads] = await Promise.all([
         db.from("travelers").select("*").eq("trip_id", trip.id).order("name"),
         db.from("bookings").select("*").eq("trip_id", trip.id).order("starts_at", { nullsFirst: false }),
@@ -393,8 +448,8 @@ export function createSupabaseRepository(supabase: AppSupabaseClient) {
       } satisfies TripSnapshot;
     },
 
-    async getPipelineSnapshotForUser(user: User): Promise<PipelineSnapshot | null> {
-      const snapshot = await this.getTripSnapshotForUser(user);
+    async getPipelineSnapshotForUser(user: User, tripId?: string | null): Promise<PipelineSnapshot | null> {
+      const snapshot = await this.getTripSnapshotForUser(user, tripId);
       if (!snapshot || !snapshot.trip) return null;
 
       const [jobs, pages] = await Promise.all([

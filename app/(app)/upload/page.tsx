@@ -13,7 +13,7 @@ export default async function UploadPage() {
       <PageHeader title="Upload" eyebrow="PDFs, screenshots, documents, and exported email confirmations" />
       <div className="grid gap-6 xl:grid-cols-[1fr_390px]">
         <div className="space-y-6">
-          <UploadPanel />
+          <UploadPanel tripName={snapshot.trip?.name} />
           <section className="space-y-3">
             <h2 className="font-display text-3xl font-bold">Review Queue</h2>
             {pending.length === 0 ? (

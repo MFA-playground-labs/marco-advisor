@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   createSupabaseServerClient: vi.fn(),
   createSupabaseRepository: vi.fn(),
+  getSelectedTripId: vi.fn(),
   uploadEvidence: vi.fn()
 }));
 
@@ -12,6 +13,10 @@ vi.mock("@/lib/supabase", () => ({
 
 vi.mock("@/lib/server/supabase-repository", () => ({
   createSupabaseRepository: mocks.createSupabaseRepository
+}));
+
+vi.mock("@/lib/server/trip-selection", () => ({
+  getSelectedTripId: mocks.getSelectedTripId
 }));
 
 vi.mock("@/lib/server/workflows/upload-evidence", () => ({
@@ -36,6 +41,7 @@ describe("POST /api/upload", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.getSelectedTripId.mockResolvedValue("trip-selected");
   });
 
   afterEach(() => {
@@ -63,6 +69,7 @@ describe("POST /api/upload", () => {
     expect(mocks.uploadEvidence).toHaveBeenCalledWith(
       expect.objectContaining({
         tripName: "Paris",
+        tripId: "trip-selected",
         file: expect.any(File)
       }),
       expect.objectContaining({

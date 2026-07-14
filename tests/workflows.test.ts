@@ -90,6 +90,7 @@ function uploadRepo(overrides: Partial<UploadEvidenceDeps["repo"]> = {}): Upload
   return {
     requireUser: vi.fn().mockResolvedValue(user),
     getActiveTrip: vi.fn().mockResolvedValue(trip),
+    getTripForOwner: vi.fn().mockResolvedValue(trip),
     createTrip: vi.fn().mockResolvedValue(trip),
     updateTrip: vi.fn().mockResolvedValue(undefined),
     uploadFile: vi.fn().mockResolvedValue(undefined),
@@ -176,6 +177,20 @@ describe("uploadEvidence", () => {
     expect(repo.createUploadRecord).toHaveBeenCalledWith(expect.objectContaining({ status: "uploaded" }));
     expect(repo.createExtractionJob).toHaveBeenCalledWith(expect.objectContaining({ status: "queued", provider: "openai", model: "gpt-4.1-mini" }));
     expect(dispatch).toHaveBeenCalledWith({ jobId: job.id, uploadId: upload.id, tripId: trip.id });
+  });
+
+  it("attaches uploads to the selected owned trip when one is provided", async () => {
+    const repo = uploadRepo();
+    const dispatch = vi.fn().mockResolvedValue({ ok: true });
+
+    await uploadEvidence(
+      { file: textFile(), tripId: "selected-trip", tripName: "Italy", destination: "Italy", startsOn: "", endsOn: "" },
+      { repo, dispatch }
+    );
+
+    expect(repo.getTripForOwner).toHaveBeenCalledWith(user.id, "selected-trip");
+    expect(repo.getActiveTrip).not.toHaveBeenCalled();
+    expect(repo.createUploadRecord).toHaveBeenCalledWith(expect.objectContaining({ trip_id: trip.id }));
   });
 
   it("fails before storage writes when OpenAI extraction is selected without an API key", async () => {
@@ -653,6 +668,13 @@ describe("extraction callback", () => {
         jobId: job.id,
         status: "succeeded",
         pages: [expect.objectContaining({ page_number: 1, text: "Hotel confirmation ABC123" })],
+        trip: expect.objectContaining({
+          name: null,
+          destination: null,
+          starts_on: null,
+          ends_on: null,
+          travelers: ["Marco"]
+        }),
         bookings: [expect.objectContaining({ confidence: 0.6, extraction_method: "haiku" })]
       })
     );
@@ -813,11 +835,14 @@ describe("runTripScan", () => {
     const repo = {
       requireUser: vi.fn().mockResolvedValue(user),
       getActiveTrip: vi.fn().mockResolvedValue(trip),
+      getTripForOwner: vi.fn().mockResolvedValue(trip),
       getBookingsForTrip: vi.fn().mockResolvedValue(bookings),
       replaceTripIssues: vi.fn().mockResolvedValue(undefined)
     };
 
-    await expect(runTripScan(repo)).resolves.toEqual({ issues: 0 });
+    await expect(runTripScan(repo, "selected-trip")).resolves.toEqual({ issues: 0 });
+    expect(repo.getTripForOwner).toHaveBeenCalledWith(user.id, "selected-trip");
+    expect(repo.getActiveTrip).not.toHaveBeenCalled();
     expect(repo.replaceTripIssues).toHaveBeenCalledWith(trip.id, []);
   });
 });
