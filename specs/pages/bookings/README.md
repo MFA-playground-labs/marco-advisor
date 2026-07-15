@@ -34,7 +34,7 @@ Bookings is the operating surface for turning extracted candidates into trusted 
 ## Current Dependencies
 
 - Requires an active trip snapshot for private data.
-- Candidate review depends on extraction callback creating candidates.
+- Candidate review depends on OpenAI extraction creating candidates.
 - Confirmed bookings feed scanner, dashboard, timeline, itinerary, and financial exposure.
 
 ## Feature Backlog

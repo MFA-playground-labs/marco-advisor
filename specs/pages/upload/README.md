@@ -13,7 +13,7 @@ Upload is the evidence intake page. It collects files and optional trip metadata
 - Renders `UploadPanel`, review queue, pipeline state, and `MarcoChat`.
 - Accepts PDF, text, HTML, PNG, JPEG, and WebP files in current validation.
 - Posts multipart upload data to `/api/upload`.
-- Shows upload/dispatch status and refreshes route data on success.
+- Shows upload/schedule status and refreshes route data on success.
 
 ## Primary User Jobs
 
@@ -27,13 +27,13 @@ Upload is the evidence intake page. It collects files and optional trip metadata
 
 - Routes: `/upload`, `/api/upload`, `/api/marco`, `/bookings`, `/pipeline`.
 - Components: `UploadPanel`, `CandidateCard`, `MarcoChat`, `StatusPill`.
-- Workflows: `uploadEvidence()`, `dispatchExtractionJob()`, `completeExtraction()`.
+- Workflows: `uploadEvidence()`, `runOpenAiExtractionJob()`.
 - Data: trips, uploads, extraction jobs, candidates.
 
 ## Current Dependencies
 
 - Depends on Supabase anonymous session middleware.
-- Extraction is n8n-first and asynchronous.
+- Extraction is OpenAI-first and asynchronous.
 - Completed image evidence work is preserved in the [spec archive](../../archive/README.md).
 
 ## Feature Backlog
@@ -41,7 +41,7 @@ Upload is the evidence intake page. It collects files and optional trip metadata
 | Feature | Status | Priority | Spec | Notes |
 | --- | --- | --- | --- | --- |
 | Upload validation feedback | Draft | P2 | TBD | Show file type/size constraints before submit. |
-| Upload queue handoff clarity | Draft | P2 | TBD | Clarify queued, dispatched, warning, and failed states. |
+| Upload queue handoff clarity | Draft | P2 | TBD | Clarify queued, scheduled, warning, and failed states. |
 | Review queue shortcuts | Draft | P3 | TBD | Improve movement from upload review to bookings workbench. |
 
 ## Cross-Page Impacts
@@ -60,4 +60,4 @@ Upload is the evidence intake page. It collects files and optional trip metadata
 ## Existing And Needed Tests
 
 - Existing: upload validation, image evidence validation, upload workflow tests, and source checks for shared accept hints.
-- Needed: upload route contract tests and page-level status behavior for dispatch warnings.
+- Needed: upload route contract tests and page-level status behavior for scheduling warnings.

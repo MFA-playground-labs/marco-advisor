@@ -1,14 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ExtractionResult } from "@/lib/extraction-schema";
 import { bookingInsertFromCandidate } from "@/lib/domain/booking-mapping";
 import { confidenceCategory, sourceSnippetPreview } from "@/lib/domain/review-quality";
 import { maxUploadBytes, validateUploadFile } from "@/lib/domain/upload";
 import { errorMessage, asyncExtractionMigrationMessage } from "@/lib/server/errors";
-import { requireExtractionWebhookAuth } from "@/lib/server/extraction-auth";
 import { createSupabaseRepository } from "@/lib/server/supabase-repository";
 import type { UploadEvidenceDeps } from "@/lib/server/workflows/upload-evidence";
 import { uploadEvidence } from "@/lib/server/workflows/upload-evidence";
-import { completeExtraction } from "@/lib/server/workflows/complete-extraction";
 import { reviewCandidate } from "@/lib/server/workflows/review-candidate";
 import { runTripScan } from "@/lib/server/workflows/run-trip-scan";
 import type { Booking, ExtractedBookingCandidate, ExtractionJob, Trip, UploadRecord } from "@/lib/types";
@@ -36,8 +33,8 @@ const job: ExtractionJob = {
   upload_id: upload.id,
   trip_id: trip.id,
   status: "queued",
-  provider: "n8n",
-  model: "claude-haiku",
+  provider: "openai",
+  model: "gpt-4.1-mini",
   error_message: null,
   warnings: []
 };
@@ -48,42 +45,6 @@ function textFile(name = "booking.txt") {
 
 function imageFile(name = "booking.png", type = "image/png") {
   return new File(["screenshot"], name, { type });
-}
-
-function extractionResult(overrides: Partial<ExtractionResult> = {}): ExtractionResult {
-  return {
-    trip: {
-      name: "Italy Summer",
-      destination: "Italy",
-      starts_on: "2026-06-27",
-      ends_on: "2026-06-29",
-      travelers: ["Marco"]
-    },
-    bookings: [
-      {
-        booking_type: "hotel",
-        title: "Masseria Il Frantoio",
-        vendor: "Masseria Il Frantoio",
-        location: "Ostuni",
-        starts_at: "2026-06-27T15:00:00Z",
-        ends_at: "2026-06-29T11:00:00Z",
-        total_amount: 800,
-        currency: "EUR",
-        refundable: true,
-        cancellation_deadline: null,
-        traveler_names: ["Marco"],
-        confirmation_code: "ABC123",
-        confidence: 0.9,
-        missing_fields: [],
-        source_pages: [],
-        source_snippets: [],
-        extraction_method: "rules",
-        notes: null
-      }
-    ],
-    warnings: [],
-    ...overrides
-  };
 }
 
 function uploadRepo(overrides: Partial<UploadEvidenceDeps["repo"]> = {}): UploadEvidenceDeps["repo"] {
@@ -152,9 +113,11 @@ describe("upload domain helpers", () => {
 
 describe("uploadEvidence", () => {
   const previousOpenAiApiKey = process.env.OPENAI_API_KEY;
+  const previousServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   beforeEach(() => {
     process.env.OPENAI_API_KEY = "test-openai-key";
+    process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service-role-key";
   });
 
   afterEach(() => {
@@ -163,29 +126,34 @@ describe("uploadEvidence", () => {
     } else {
       process.env.OPENAI_API_KEY = previousOpenAiApiKey;
     }
+    if (previousServiceRoleKey === undefined) {
+      delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    } else {
+      process.env.SUPABASE_SERVICE_ROLE_KEY = previousServiceRoleKey;
+    }
   });
 
-  it("stores the upload, creates a queued job, and dispatches it", async () => {
+  it("stores the upload, creates a queued OpenAI job, and schedules it", async () => {
     const repo = uploadRepo();
-    const dispatch = vi.fn().mockResolvedValue({ ok: true });
+    const scheduleExtraction = vi.fn().mockResolvedValue(undefined);
 
     await expect(
-      uploadEvidence({ file: textFile(), tripName: "Italy", destination: "Italy", startsOn: "", endsOn: "" }, { repo, dispatch })
-    ).resolves.toEqual({ upload, job, dispatched: true });
+      uploadEvidence({ file: textFile(), tripName: "Italy", destination: "Italy", startsOn: "", endsOn: "" }, { repo, scheduleExtraction })
+    ).resolves.toEqual({ upload, job, scheduled: true });
 
     expect(repo.uploadFile).toHaveBeenCalledOnce();
     expect(repo.createUploadRecord).toHaveBeenCalledWith(expect.objectContaining({ status: "uploaded" }));
     expect(repo.createExtractionJob).toHaveBeenCalledWith(expect.objectContaining({ status: "queued", provider: "openai", model: "gpt-4.1-mini" }));
-    expect(dispatch).toHaveBeenCalledWith({ jobId: job.id, uploadId: upload.id, tripId: trip.id });
+    expect(scheduleExtraction).toHaveBeenCalledWith({ jobId: job.id, uploadId: upload.id, tripId: trip.id });
   });
 
   it("attaches uploads to the selected owned trip when one is provided", async () => {
     const repo = uploadRepo();
-    const dispatch = vi.fn().mockResolvedValue({ ok: true });
+    const scheduleExtraction = vi.fn().mockResolvedValue(undefined);
 
     await uploadEvidence(
       { file: textFile(), tripId: "selected-trip", tripName: "Italy", destination: "Italy", startsOn: "", endsOn: "" },
-      { repo, dispatch }
+      { repo, scheduleExtraction }
     );
 
     expect(repo.getTripForOwner).toHaveBeenCalledWith(user.id, "selected-trip");
@@ -198,11 +166,11 @@ describe("uploadEvidence", () => {
       getTripForOwner: vi.fn().mockResolvedValue(null),
       getActiveTrip: vi.fn().mockResolvedValue(trip)
     });
-    const dispatch = vi.fn().mockResolvedValue({ ok: true });
+    const scheduleExtraction = vi.fn().mockResolvedValue(undefined);
 
     await uploadEvidence(
       { file: textFile(), tripId: "stale-trip", tripName: "Should not create", destination: "", startsOn: "", endsOn: "" },
-      { repo, dispatch }
+      { repo, scheduleExtraction }
     );
 
     expect(repo.getTripForOwner).toHaveBeenCalledWith(user.id, "stale-trip");
@@ -214,12 +182,12 @@ describe("uploadEvidence", () => {
   it("fails before storage writes when OpenAI extraction is selected without an API key", async () => {
     delete process.env.OPENAI_API_KEY;
     const repo = uploadRepo();
-    const dispatch = vi.fn().mockResolvedValue({ ok: true });
+    const scheduleExtraction = vi.fn().mockResolvedValue(undefined);
 
     await expect(
-      uploadEvidence({ file: textFile(), tripName: "Italy", destination: "Italy", startsOn: "", endsOn: "" }, { repo, dispatch })
+      uploadEvidence({ file: textFile(), tripName: "Italy", destination: "Italy", startsOn: "", endsOn: "" }, { repo, scheduleExtraction })
     ).rejects.toMatchObject({
-      message: "OPENAI_API_KEY is required when EXTRACTION_PROVIDER=openai.",
+      message: "OPENAI_API_KEY is required for OpenAI extraction.",
       status: 500
     });
 
@@ -227,32 +195,35 @@ describe("uploadEvidence", () => {
     expect(repo.uploadFile).not.toHaveBeenCalled();
     expect(repo.createUploadRecord).not.toHaveBeenCalled();
     expect(repo.createExtractionJob).not.toHaveBeenCalled();
-    expect(dispatch).not.toHaveBeenCalled();
+    expect(scheduleExtraction).not.toHaveBeenCalled();
   });
 
-  it("uses n8n provider metadata when the fallback provider is configured", async () => {
-    const previousProvider = process.env.EXTRACTION_PROVIDER;
-    process.env.EXTRACTION_PROVIDER = "n8n";
+  it("fails before storage writes when the service role key needed by OpenAI extraction is missing", async () => {
+    delete process.env.SUPABASE_SERVICE_ROLE_KEY;
     const repo = uploadRepo();
-    const dispatch = vi.fn().mockResolvedValue({ ok: true });
+    const scheduleExtraction = vi.fn().mockResolvedValue(undefined);
 
-    await uploadEvidence({ file: textFile(), tripName: "Italy", destination: "Italy", startsOn: "", endsOn: "" }, { repo, dispatch });
+    await expect(
+      uploadEvidence({ file: textFile(), tripName: "Italy", destination: "Italy", startsOn: "", endsOn: "" }, { repo, scheduleExtraction })
+    ).rejects.toMatchObject({
+      message: "SUPABASE_SERVICE_ROLE_KEY is required for OpenAI extraction.",
+      status: 500
+    });
 
-    expect(repo.createExtractionJob).toHaveBeenCalledWith(expect.objectContaining({ status: "queued", provider: "n8n", model: "claude-haiku" }));
-    if (previousProvider === undefined) {
-      delete process.env.EXTRACTION_PROVIDER;
-    } else {
-      process.env.EXTRACTION_PROVIDER = previousProvider;
-    }
+    expect(repo.requireUser).not.toHaveBeenCalled();
+    expect(repo.uploadFile).not.toHaveBeenCalled();
+    expect(repo.createUploadRecord).not.toHaveBeenCalled();
+    expect(repo.createExtractionJob).not.toHaveBeenCalled();
+    expect(scheduleExtraction).not.toHaveBeenCalled();
   });
 
   it("propagates the trace id to upload and extraction job persistence", async () => {
     const repo = uploadRepo();
-    const dispatch = vi.fn().mockResolvedValue({ ok: true });
+    const scheduleExtraction = vi.fn().mockResolvedValue(undefined);
 
     await uploadEvidence(
       { file: textFile(), tripName: "Italy", destination: "Italy", startsOn: "", endsOn: "" },
-      { repo, dispatch, observability: { traceId: "trace-1", interactionId: "interaction-1" } }
+      { repo, scheduleExtraction, observability: { traceId: "trace-1", interactionId: "interaction-1" } }
     );
 
     expect(repo.createUploadRecord).toHaveBeenCalledWith(expect.objectContaining({ trace_id: "trace-1" }));
@@ -269,66 +240,40 @@ describe("uploadEvidence", () => {
     expect(repo.recordExtractionJobEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         traceId: "trace-1",
-        event: "marco.upload_dispatch_completed",
-        metadata: { dispatched: true }
+        event: "marco.upload_extraction_scheduled",
+        metadata: { scheduled: true }
       })
     );
   });
 
-  it("sends image evidence through the same upload workflow and dispatch shape", async () => {
+  it("sends image evidence through the same upload workflow and schedule shape", async () => {
     const repo = uploadRepo({
       createUploadRecord: vi.fn().mockResolvedValue({ ...upload, filename: "booking.png", content_type: "image/png" })
     });
-    const dispatch = vi.fn().mockResolvedValue({ ok: true });
+    const scheduleExtraction = vi.fn().mockResolvedValue(undefined);
 
     await expect(
-      uploadEvidence({ file: imageFile(), tripName: "Italy", destination: "Italy", startsOn: "", endsOn: "" }, { repo, dispatch })
+      uploadEvidence({ file: imageFile(), tripName: "Italy", destination: "Italy", startsOn: "", endsOn: "" }, { repo, scheduleExtraction })
     ).resolves.toEqual({
       upload: { ...upload, filename: "booking.png", content_type: "image/png" },
       job,
-      dispatched: true
+      scheduled: true
     });
 
     expect(repo.uploadFile).toHaveBeenCalledWith(expect.stringMatching(/^user-1\/.*-booking\.png$/), expect.any(File), "image/png");
     expect(repo.createUploadRecord).toHaveBeenCalledWith(expect.objectContaining({ filename: "booking.png", content_type: "image/png" }));
-    expect(dispatch).toHaveBeenCalledWith({ jobId: job.id, uploadId: upload.id, tripId: trip.id });
-  });
-
-  it("keeps the upload queued and records a warning when dispatch fails", async () => {
-    const repo = uploadRepo();
-    const dispatch = vi.fn().mockResolvedValue({ ok: false, warning: "n8n unavailable" });
-
-    await expect(
-      uploadEvidence({ file: textFile(), tripName: "Italy", destination: "Italy", startsOn: "", endsOn: "" }, { repo, dispatch })
-    ).resolves.toEqual({ upload, job, dispatched: false });
-
-    expect(repo.markExtractionJob).toHaveBeenCalledWith(
-      job.id,
-      expect.objectContaining({ error_message: "n8n unavailable", warnings: ["n8n unavailable"] })
-    );
+    expect(scheduleExtraction).toHaveBeenCalledWith({ jobId: job.id, uploadId: upload.id, tripId: trip.id });
   });
 
   it("returns a migration warning when extraction job creation falls back to the old schema", async () => {
     const repo = uploadRepo({
       createExtractionJob: vi.fn().mockResolvedValue({ ...job, migration_warning: asyncExtractionMigrationMessage })
     });
-    const dispatch = vi.fn().mockResolvedValue({ ok: true });
+    const scheduleExtraction = vi.fn().mockResolvedValue(undefined);
 
     await expect(
-      uploadEvidence({ file: textFile(), tripName: "Italy", destination: "Italy", startsOn: "", endsOn: "" }, { repo, dispatch })
-    ).resolves.toEqual({ upload, job: { ...job, migration_warning: asyncExtractionMigrationMessage }, dispatched: true, warning: asyncExtractionMigrationMessage });
-  });
-
-  it("does not write the new warnings column when fallback schema is detected", async () => {
-    const fallbackJob = { ...job, migration_warning: asyncExtractionMigrationMessage };
-    const repo = uploadRepo({
-      createExtractionJob: vi.fn().mockResolvedValue(fallbackJob)
-    });
-    const dispatch = vi.fn().mockResolvedValue({ ok: false, warning: "n8n unavailable" });
-
-    await uploadEvidence({ file: textFile(), tripName: "Italy", destination: "Italy", startsOn: "", endsOn: "" }, { repo, dispatch });
-
-    expect(repo.markExtractionJob).toHaveBeenCalledWith(job.id, { error_message: "n8n unavailable" });
+      uploadEvidence({ file: textFile(), tripName: "Italy", destination: "Italy", startsOn: "", endsOn: "" }, { repo, scheduleExtraction })
+    ).resolves.toEqual({ upload, job: { ...job, migration_warning: asyncExtractionMigrationMessage }, scheduled: true, warning: asyncExtractionMigrationMessage });
   });
 });
 
@@ -459,15 +404,15 @@ describe("supabase repository", () => {
         upload_id: upload.id,
         trip_id: trip.id,
         status: "queued",
-        provider: "n8n",
-        model: "claude-haiku"
+        provider: "openai",
+        model: "gpt-4.1-mini"
       })
     ).resolves.toEqual({ ...job, migration_warning: asyncExtractionMigrationMessage });
 
     expect(inserted).toEqual([
       {
         table: "extraction_jobs",
-        input: expect.objectContaining({ provider: "n8n", model: "claude-haiku" })
+        input: expect.objectContaining({ provider: "openai", model: "gpt-4.1-mini" })
       },
       {
         table: "extraction_jobs",
@@ -561,8 +506,8 @@ describe("supabase repository", () => {
         trip: {},
         bookings: [],
         warnings: [],
-        provider: "n8n",
-        model: "claude-haiku",
+        provider: "openai",
+        model: "gpt-4.1-mini",
         errorMessage: null,
         rawResult: {}
       })
@@ -573,7 +518,7 @@ describe("supabase repository", () => {
         input: expect.objectContaining({
           input_job_id: job.id,
           input_status: "succeeded",
-          input_provider: "n8n"
+          input_provider: "openai"
         })
       }
     ]);
@@ -712,117 +657,6 @@ describe("supabase repository", () => {
       },
       { columns: "*" }
     ]);
-  });
-});
-
-describe("extraction callback", () => {
-  const consoleInfo = vi.spyOn(console, "info").mockImplementation(() => undefined);
-  const consoleWarn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-
-  it("rejects missing or invalid webhook secrets", () => {
-    const previous = process.env.EXTRACTION_WEBHOOK_SECRET;
-    process.env.EXTRACTION_WEBHOOK_SECRET = "secret";
-
-    expect(() => requireExtractionWebhookAuth(new Request("https://example.com"))).toThrow("Invalid extraction webhook secret");
-    expect(() =>
-      requireExtractionWebhookAuth(
-        new Request("https://example.com", {
-          headers: { Authorization: "Bearer wrong" }
-        })
-      )
-    ).toThrow("Invalid extraction webhook secret");
-
-    process.env.EXTRACTION_WEBHOOK_SECRET = previous;
-  });
-
-  it("writes pages and candidates from a valid callback payload", async () => {
-    const repo = {
-      completeExtractionJob: vi.fn().mockResolvedValue({ status: "succeeded", candidates: 1, duplicate: false })
-    };
-
-    await expect(
-      completeExtraction(repo, {
-        job_id: job.id,
-        status: "succeeded",
-        provider: "n8n",
-        model: "claude-haiku",
-        pages: [{ page_number: 1, text: "Hotel confirmation ABC123", extraction_confidence: 0.91 }],
-        ...extractionResult({
-          bookings: [
-            {
-              ...extractionResult().bookings[0],
-              confidence: 0.6,
-              source_pages: [1],
-              source_snippets: ["Hotel confirmation ABC123"],
-              extraction_method: "haiku"
-            }
-          ]
-        })
-      })
-    ).resolves.toEqual({ status: "succeeded", candidates: 1 });
-
-    expect(repo.completeExtractionJob).toHaveBeenCalledWith(
-      expect.objectContaining({
-        jobId: job.id,
-        status: "succeeded",
-        pages: [expect.objectContaining({ page_number: 1, text: "Hotel confirmation ABC123" })],
-        trip: expect.objectContaining({
-          name: null,
-          destination: null,
-          starts_on: null,
-          ends_on: null,
-          travelers: ["Marco"]
-        }),
-        bookings: [expect.objectContaining({ confidence: 0.6, extraction_method: "haiku" })]
-      })
-    );
-    expect(consoleInfo).toHaveBeenCalledWith("marco.extraction_callback_completed", expect.objectContaining({ job_id: job.id, candidates: 1 }));
-  });
-
-  it("marks jobs and uploads failed when n8n reports extraction failure", async () => {
-    const repo = {
-      completeExtractionJob: vi.fn().mockResolvedValue({ status: "failed", candidates: 0, duplicate: false })
-    };
-
-    await expect(
-      completeExtraction(repo, {
-        job_id: job.id,
-        status: "failed",
-        warnings: ["No extractable text"],
-        error_message: "No extractable text"
-      })
-    ).resolves.toEqual({ status: "failed", candidates: 0 });
-
-    expect(repo.completeExtractionJob).toHaveBeenCalledWith(
-      expect.objectContaining({
-        jobId: job.id,
-        status: "failed",
-        errorMessage: "No extractable text",
-        warnings: ["No extractable text"]
-      })
-    );
-    expect(consoleWarn).toHaveBeenCalledWith("marco.extraction_callback_failed", expect.objectContaining({ job_id: job.id }));
-  });
-
-  it("returns the existing terminal state when a duplicate callback is ignored", async () => {
-    const repo = {
-      completeExtractionJob: vi.fn().mockResolvedValue({ status: "succeeded", candidates: 1, duplicate: true })
-    };
-
-    await expect(
-      completeExtraction(repo, {
-        job_id: job.id,
-        status: "failed",
-        warnings: ["late duplicate failure"],
-        error_message: "late duplicate failure"
-      })
-    ).resolves.toEqual({ status: "succeeded", candidates: 1 });
-
-    expect(repo.completeExtractionJob).toHaveBeenCalledOnce();
-    expect(consoleInfo).toHaveBeenCalledWith(
-      "marco.extraction_callback_duplicate_ignored",
-      expect.objectContaining({ job_id: job.id, requested_status: "failed", current_status: "succeeded" })
-    );
   });
 });
 

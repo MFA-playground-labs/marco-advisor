@@ -15,7 +15,7 @@ Feature specs describe intended future behavior. The current application behavio
 
 | Spec | Status | Purpose |
 | --- | --- | --- |
-| [Extraction Pipeline Reliability](extraction-pipeline-reliability.md) | Ready | Make worker claim and callback completion atomic, idempotent, and observable. |
+| [Extraction Pipeline Reliability](extraction-pipeline-reliability.md) | Ready | Make OpenAI worker execution, retry, completion, and visibility reliable. |
 
 Implemented, superseded, and retired specs are preserved in the [spec archive](../archive/README.md).
 
@@ -35,11 +35,8 @@ Use page specs when feature work is primarily experienced through one app screen
 ## Related Catalog Sections
 
 - [Upload API](../../docs/specification-catalog.md#post-apiupload)
-- [Async extraction callback](../../docs/specification-catalog.md#post-apiextractionscallback)
-- [Worker job metadata endpoint](../../docs/specification-catalog.md#get-apiextractionsjobsid)
-- [Worker file endpoint](../../docs/specification-catalog.md#get-apiextractionsjobsidfile)
+- [OpenAI run endpoint](../../docs/specification-catalog.md#post-apiextractionsjobsidrun)
 - [Candidate review API](../../docs/specification-catalog.md#post-apicandidatesid)
 - [Upload workflow](../../docs/specification-catalog.md#uploadevidenceinput-deps)
-- [Extraction completion workflow](../../docs/specification-catalog.md#completeextractionrepo-payload)
 - [Candidate review workflow](../../docs/specification-catalog.md#reviewcandidaterepo-id-intent)
 - [Test coverage map](../../docs/specification-catalog.md#10-test-coverage-map)

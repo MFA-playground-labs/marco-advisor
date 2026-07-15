@@ -32,12 +32,13 @@ Upload-first travel intelligence for private trips. Marco shows a public read-on
    OPENAI_API_KEY=
    OPENAI_EXTRACTION_MODEL=gpt-4.1-mini
    OPENAI_ADVISOR_MODEL=gpt-4.1-mini
-   SUPABASE_SERVICE_ROLE_KEY=... # optional; only needed for admin/server-only jobs
+   EXTRACTION_RUN_SECRET=...
+   SUPABASE_SERVICE_ROLE_KEY=... # required for server-only extraction jobs
    ```
 
    Older Supabase projects may expose `NEXT_PUBLIC_SUPABASE_ANON_KEY`; the app supports either `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` or `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
 
-   For deployed uploads, set `OPENAI_API_KEY` in Vercel Project Settings under Environment Variables for the production environment. Do not prefix it with `NEXT_PUBLIC_`; upload extraction reads it only from server-side runtime env.
+   For deployed uploads, set `OPENAI_API_KEY` and `SUPABASE_SERVICE_ROLE_KEY` in Vercel Project Settings under Environment Variables for the production environment. Do not prefix them with `NEXT_PUBLIC_`; upload extraction reads them only from server-side runtime env.
 
 3. Apply Marco's replacement Supabase migration in `supabase/migrations/20260607160000_upload_first_mvp.sql`.
 

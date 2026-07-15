@@ -39,8 +39,7 @@ describe("UI source contracts", () => {
     expect(uploadWorkflow).toContain("marco.upload_storage_completed");
     expect(uploadWorkflow).toContain("marco.upload_record_created");
     expect(uploadWorkflow).toContain("marco.upload_extraction_job_created");
-    expect(uploadWorkflow).toContain("marco.upload_dispatch_completed");
-    expect(uploadWorkflow).toContain("marco.upload_dispatch_failed");
+    expect(uploadWorkflow).toContain("marco.upload_extraction_scheduled");
     expect(uploadWorkflow).toContain("marco.upload_workflow_failed");
   });
 

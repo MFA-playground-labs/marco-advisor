@@ -24,22 +24,22 @@ Pipeline is the operational trace for evidence ingestion. It shows how each uplo
 
 ## Related Routes, Components, And Workflows
 
-- Routes: `/pipeline`, `/api/extractions/jobs/[id]`, `/api/extractions/jobs/[id]/file`, `/api/extractions/callback`.
+- Routes: `/pipeline`, `/api/extractions/jobs/[id]/run`.
 - Components: `Card`, `StatusPill`.
-- Workflows: `uploadEvidence()`, `completeExtraction()`, worker metadata/file endpoints.
+- Workflows: `uploadEvidence()`, `runOpenAiExtractionJob()`.
 - Data: uploads, extraction jobs, upload pages, candidates, bookings.
 
 ## Current Dependencies
 
 - Depends on async extraction migration for provider/model/warnings/raw result/upload pages.
-- Worker endpoints require service role and webhook secret.
+- Manual retry endpoint requires service role and run secret.
 - Retry behavior is not implemented.
 
 ## Feature Backlog
 
 | Feature | Status | Priority | Spec | Notes |
 | --- | --- | --- | --- | --- |
-| Pipeline reliability | Ready | P1 | [../../features/extraction-pipeline-reliability.md](../../features/extraction-pipeline-reliability.md) | Atomic worker claim, idempotent callback completion, visibility. |
+| Pipeline reliability | Ready | P1 | [../../features/extraction-pipeline-reliability.md](../../features/extraction-pipeline-reliability.md) | OpenAI worker completion, retry, and visibility. |
 | Worker lifecycle diagnostics | Draft | P2 | TBD | Show limits, started/completed timestamps, warning details. |
 | Manual retry strategy | Draft | P2 | TBD | Decide operator/user retry entrypoint. |
 | Accepted record lineage | Draft | P3 | TBD | Make source candidate/upload lineage more inspectable. |
@@ -52,12 +52,10 @@ Pipeline is the operational trace for evidence ingestion. It shows how each uplo
 
 ## Catalog Links
 
-- [Worker metadata endpoint](../../../docs/specification-catalog.md#get-apiextractionsjobsid)
-- [Worker file endpoint](../../../docs/specification-catalog.md#get-apiextractionsjobsidfile)
-- [Extraction callback](../../../docs/specification-catalog.md#post-apiextractionscallback)
+- [OpenAI run endpoint](../../../docs/specification-catalog.md#post-apiextractionsjobsidrun)
 - [Pipeline page](../../../docs/specification-catalog.md#pages)
 
 ## Existing And Needed Tests
 
-- Existing: extraction callback workflow tests, worker metadata route tests, file endpoint route tests, schema-cache fallback tests, and page-level warning visibility source checks.
+- Existing: OpenAI worker tests, run route tests, schema-cache fallback tests, and page-level warning visibility source checks.
 - Needed: retry behavior tests after retry spec is approved.

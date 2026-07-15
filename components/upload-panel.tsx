@@ -52,7 +52,7 @@ export function UploadPanel({ tripName }: { tripName?: string | null }) {
         failureTelemetrySent = true;
         throw new Error(message);
       }
-      setStatus(payload.warning ?? "Extraction queued. Review candidates will appear after n8n processes the evidence.");
+      setStatus(payload.warning ?? "Extraction queued. Review candidates will appear after Marco processes the evidence.");
       void emitUploadTelemetry({
         event: "marco.upload_submit_succeeded",
         interaction_id: interactionId,

@@ -1,21 +1,23 @@
 export const defaultOpenAiExtractionModel = "gpt-4.1-mini";
-export const defaultN8nExtractionModel = "claude-haiku";
+export const extractionProvider = "openai";
 
-export type ExtractionProvider = "openai" | "n8n";
+export type ExtractionProvider = typeof extractionProvider;
 
 export function getExtractionProvider(): ExtractionProvider {
-  return process.env.EXTRACTION_PROVIDER === "n8n" ? "n8n" : "openai";
+  return extractionProvider;
 }
 
-export function getExtractionModel(provider = getExtractionProvider()) {
-  return provider === "openai"
-    ? process.env.OPENAI_EXTRACTION_MODEL ?? defaultOpenAiExtractionModel
-    : process.env.EXTRACTION_FALLBACK_MODEL ?? defaultN8nExtractionModel;
+export function getExtractionModel() {
+  return process.env.OPENAI_EXTRACTION_MODEL ?? defaultOpenAiExtractionModel;
 }
 
-export function getExtractionProviderConfigError(provider = getExtractionProvider()) {
-  if (provider === "openai" && !process.env.OPENAI_API_KEY) {
-    return "OPENAI_API_KEY is required when EXTRACTION_PROVIDER=openai.";
+export function getExtractionProviderConfigError() {
+  if (!process.env.OPENAI_API_KEY) {
+    return "OPENAI_API_KEY is required for OpenAI extraction.";
+  }
+
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return "SUPABASE_SERVICE_ROLE_KEY is required for OpenAI extraction.";
   }
 
   return null;

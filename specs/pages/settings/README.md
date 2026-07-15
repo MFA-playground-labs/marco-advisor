@@ -12,7 +12,7 @@ Settings exposes runtime readiness and operational diagnostics so the team can t
 
 - Shows environment checks for Supabase URL, Supabase publishable key, OpenAI API key, and Supabase service role.
 - Shows static runtime behavior notes.
-- Does not check n8n webhook URL, extraction webhook secret, schema freshness, or worker reachability.
+- Does not check schema freshness or worker reachability.
 
 ## Primary User Jobs
 
@@ -38,10 +38,10 @@ Settings exposes runtime readiness and operational diagnostics so the team can t
 
 | Feature | Status | Priority | Spec | Notes |
 | --- | --- | --- | --- | --- |
-| Environment diagnostics v2 | Draft | P2 | TBD | Include n8n URL, webhook secret, extraction limits, service role readiness. |
+| Environment diagnostics v2 | Draft | P2 | TBD | Include extraction limits, run secret, and service role readiness. |
 | Extraction worker readiness | Draft | P2 | TBD | Show whether worker endpoints can be called safely. |
 | Schema freshness indicator | Draft | P3 | TBD | Detect async extraction migration/schema cache mismatch. |
-| Operational runbook links | Draft | P3 | TBD | Link docs for setup, n8n, Supabase, and verification. |
+| Operational runbook links | Draft | P3 | TBD | Link docs for setup, OpenAI, Supabase, and verification. |
 
 ## Cross-Page Impacts
 
@@ -53,7 +53,7 @@ Settings exposes runtime readiness and operational diagnostics so the team can t
 
 - [Environment contract](../../../docs/specification-catalog.md#3-environment-contract)
 - [Settings page](../../../docs/specification-catalog.md#pages)
-- [Extraction auth and dispatch](../../../docs/specification-catalog.md#extraction-auth-and-dispatch)
+- [Extraction run auth](../../../docs/specification-catalog.md#extraction-run-auth)
 
 ## Existing And Needed Tests
 

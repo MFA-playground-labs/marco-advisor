@@ -1,6 +1,4 @@
 import { after, NextResponse } from "next/server";
-import type { ExtractionDispatchInput } from "@/lib/server/extraction-dispatch";
-import { getExtractionProvider } from "@/lib/server/extraction-provider";
 import { createSupabaseServerClient } from "@/lib/supabase";
 import { errorMessage, errorStatus } from "@/lib/server/errors";
 import { createSupabaseRepository } from "@/lib/server/supabase-repository";
@@ -56,7 +54,7 @@ export async function POST(request: Request) {
       },
       {
         repo: createSupabaseRepository(supabase),
-        dispatch: getExtractionProvider() === "openai" ? scheduleOpenAiExtraction : undefined,
+        scheduleExtraction: scheduleOpenAiExtraction,
         observability: { traceId: traceContext.traceId, interactionId: traceContext.interactionId }
       }
     );
@@ -75,10 +73,8 @@ function fileExtension(filename: string) {
   return extension && extension !== filename ? extension.toLowerCase().slice(0, 16) : "";
 }
 
-async function scheduleOpenAiExtraction(input: ExtractionDispatchInput) {
+async function scheduleOpenAiExtraction(input: { jobId: string }) {
   after(async () => {
     await runOpenAiExtractionJob({ jobId: input.jobId });
   });
-
-  return { ok: true };
 }

@@ -13,7 +13,7 @@ When helping refine this project:
 - Start with product value and user trust before proposing implementation details.
 - Preserve the current product scope unless explicitly asked to expand it.
 - Clearly separate current shipped behavior from roadmap or speculative ideas.
-- Protect privacy and security boundaries. Do not request or include real API keys, service-role keys, webhook secrets, bearer tokens, private upload contents, or production user data.
+- Protect privacy and security boundaries. Do not request or include real API keys, service-role keys, run secrets, bearer tokens, private upload contents, or production user data.
 - Keep recommendations architecture-aware and implementation-pragmatic. Prefer small, reversible improvements that fit the current stack.
 - If proposing alternatives, explain what user outcome improves, what cost or operational complexity changes, and what migration risk is introduced.
 
@@ -295,7 +295,6 @@ Scanner outputs feed dashboard readiness, issue lists, timeline conflict visibil
 - Supabase Storage.
 - Supabase Row Level Security.
 - OpenAI Responses API for extraction and Marco advisor functions.
-- Optional n8n extraction path remains documented and supported where configured.
 - Vitest for tests.
 - Vercel deployment assumptions for the Next.js app.
 
@@ -316,7 +315,7 @@ Scanner outputs feed dashboard readiness, issue lists, timeline conflict visibil
 
 `lib/server/workflows/`:
 
-- Server-side business workflows including upload evidence, complete extraction, run OpenAI extraction, review candidate, and run trip scan.
+- Server-side business workflows including upload evidence, run OpenAI extraction, review candidate, and run trip scan.
 
 `lib/server/supabase-repository.ts`:
 
@@ -377,18 +376,18 @@ Scanner flow:
 ### Security And Privacy
 
 - Never expose service-role keys or OpenAI keys to client bundles.
-- Keep `OPENAI_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `EXTRACTION_WEBHOOK_SECRET`, and n8n webhook URLs server-only.
+- Keep `OPENAI_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, and `EXTRACTION_RUN_SECRET` server-only.
 - Public Supabase values must use `NEXT_PUBLIC_` only when safe for browser exposure.
 - RLS is required for tables in exposed schemas.
-- Treat uploads, webhook payloads, OpenAI output, n8n output, and user input as untrusted.
-- Do not log secrets, bearer tokens, auth headers, full webhook bodies, raw credentials, or sensitive private evidence.
+- Treat uploads, OpenAI output, and user input as untrusted.
+- Do not log secrets, bearer tokens, auth headers, raw credentials, or sensitive private evidence.
 - Signed file URLs should be short-lived and scoped to the intended worker use case.
 
 ### Reliability
 
 - Extraction must be observable and recoverable.
 - Failed jobs should preserve enough state for diagnosis.
-- Duplicate worker callbacks should not duplicate candidates or overwrite terminal success.
+- Duplicate or retried worker runs should not duplicate candidates or overwrite terminal success.
 - Candidate acceptance should become transactional to avoid partial booking/segment/candidate writes.
 - Missing runtime configuration should fail early with clear user/operator feedback.
 - Storage cleanup and failed-state marking should preserve the original error when cleanup fails.
@@ -459,7 +458,7 @@ You are helping refine Marco Advisor using the attached product brief as project
 ### Architecture Review Prompt
 
 ```text
-You are reviewing Marco Advisor architecture using the attached brief. Focus on system boundaries, data ownership, async extraction flow, Supabase RLS, reliability, observability, and operational recovery. Preserve the current Next.js, Supabase, OpenAI, and optional n8n architecture unless you explicitly justify a different path with migration costs and user benefits.
+You are reviewing Marco Advisor architecture using the attached brief. Focus on system boundaries, data ownership, async OpenAI extraction flow, Supabase RLS, reliability, observability, and operational recovery. Preserve the current Next.js, Supabase, and OpenAI architecture unless you explicitly justify a different path with migration costs and user benefits.
 ```
 
 ### Engineering Implementation Prompt
@@ -471,7 +470,7 @@ You are planning an implementation for Marco Advisor using the attached brief. P
 ### QA And Release Readiness Prompt
 
 ```text
-You are validating Marco Advisor release readiness using the attached brief. Build a test plan around the full user journey: upload evidence, extraction lifecycle, candidate review, accepted bookings, scanner issues, dashboard summary, timeline, itinerary context, and settings diagnostics. Include failure states for missing config, provider failure, invalid input, duplicate callbacks, and permission boundaries.
+You are validating Marco Advisor release readiness using the attached brief. Build a test plan around the full user journey: upload evidence, extraction lifecycle, candidate review, accepted bookings, scanner issues, dashboard summary, timeline, itinerary context, and settings diagnostics. Include failure states for missing config, provider failure, invalid input, duplicate worker runs, and permission boundaries.
 ```
 
 ## 11. Review Confirmation

@@ -10,7 +10,7 @@ export default function SettingsPage() {
       true
     ],
     ["OpenAI API key", Boolean(process.env.OPENAI_API_KEY), true],
-    ["Supabase service role", Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY), false]
+    ["Supabase service role", Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY), true]
   ] as const;
 
   return (

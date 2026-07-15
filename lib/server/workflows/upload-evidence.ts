@@ -4,7 +4,6 @@ import {
   fallbackTripName,
   validateUploadFile
 } from "@/lib/domain/upload";
-import { dispatchExtractionJob } from "@/lib/server/extraction-dispatch";
 import { getExtractionModel, getExtractionProvider, getExtractionProviderConfigError } from "@/lib/server/extraction-provider";
 import type { SupabaseRepository } from "@/lib/server/supabase-repository";
 import { WorkflowError, errorMessage } from "@/lib/server/errors";
@@ -42,7 +41,7 @@ export type UploadEvidenceDeps = {
     | "markExtractionJob"
     | "recordExtractionJobEvent"
   >;
-  dispatch?: typeof dispatchExtractionJob;
+  scheduleExtraction?: (input: { jobId: string; uploadId: string; tripId: string }) => Promise<void> | void;
   observability?: {
     traceId?: string;
     interactionId?: string;
@@ -72,10 +71,9 @@ export async function uploadEvidence(input: UploadEvidenceInput, deps: UploadEvi
   }
 
   const repo = deps.repo;
-  const dispatch = deps.dispatch ?? dispatchExtractionJob;
   const provider = getExtractionProvider();
-  const model = getExtractionModel(provider);
-  const configError = getExtractionProviderConfigError(provider);
+  const model = getExtractionModel();
+  const configError = getExtractionProviderConfigError();
   if (configError) {
     logWorkflowEvent("marco.upload_config_failed", traceContext, {
       ...logContext,
@@ -166,52 +164,25 @@ export async function uploadEvidence(input: UploadEvidenceInput, deps: UploadEvi
     });
     migrationWarning = "migration_warning" in job ? String(job.migration_warning) : null;
 
-    stage = "dispatch";
-    const dispatched = await dispatch({ jobId: job.id, uploadId: upload.id, tripId: trip.id });
-    if (!dispatched.ok && dispatched.warning) {
-      const dispatchErrorMessage = safeErrorMessage(dispatched.warning);
-      logWorkflowEvent("marco.upload_dispatch_failed", jobTraceContext, {
-        ...logContext,
-        dispatched: false,
-        errorMessage: dispatchErrorMessage,
-        durationMs: elapsedMs(startedAt)
-      });
-      await recordExtractionEvent(repo, jobTraceContext, {
-        event: "marco.upload_dispatch_failed",
-        stage: "dispatch",
-        status: "queued",
-        durationMs: elapsedMs(startedAt),
-        errorMessage: dispatchErrorMessage,
-        metadata: { dispatched: false }
-      });
-      await repo.markExtractionJob(
-        job.id,
-        migrationWarning
-          ? { error_message: dispatched.warning }
-          : {
-              error_message: dispatched.warning,
-              warnings: [dispatched.warning]
-            }
-      );
-    } else {
-      logWorkflowEvent("marco.upload_dispatch_completed", jobTraceContext, {
-        ...logContext,
-        dispatched: true,
-        durationMs: elapsedMs(startedAt)
-      });
-      await recordExtractionEvent(repo, jobTraceContext, {
-        event: "marco.upload_dispatch_completed",
-        stage: "dispatch",
-        status: "queued",
-        durationMs: elapsedMs(startedAt),
-        metadata: { dispatched: true }
-      });
-    }
+    stage = "schedule";
+    await deps.scheduleExtraction?.({ jobId: job.id, uploadId: upload.id, tripId: trip.id });
+    logWorkflowEvent("marco.upload_extraction_scheduled", jobTraceContext, {
+      ...logContext,
+      scheduled: true,
+      durationMs: elapsedMs(startedAt)
+    });
+    await recordExtractionEvent(repo, jobTraceContext, {
+      event: "marco.upload_extraction_scheduled",
+      stage: "schedule",
+      status: "queued",
+      durationMs: elapsedMs(startedAt),
+      metadata: { scheduled: true }
+    });
 
     return {
       upload,
       job,
-      dispatched: dispatched.ok,
+      scheduled: true,
       ...(migrationWarning ? { warning: migrationWarning } : {})
     };
   } catch (error) {

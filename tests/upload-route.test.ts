@@ -60,7 +60,7 @@ describe("POST /api/upload", () => {
     const result = {
       upload: { id: "upload-1", trip_id: "trip-selected" },
       job: { id: "job-1" },
-      dispatched: true
+      scheduled: true
     };
     mocks.createSupabaseServerClient.mockResolvedValue({});
     mocks.createSupabaseRepository.mockReturnValue({ repo: true });
@@ -78,7 +78,7 @@ describe("POST /api/upload", () => {
       }),
       expect.objectContaining({
         repo: { repo: true },
-        dispatch: expect.any(Function),
+        scheduleExtraction: expect.any(Function),
         observability: { traceId: "interaction-1", interactionId: "interaction-1" }
       })
     );
@@ -118,7 +118,7 @@ describe("POST /api/upload", () => {
     formData.set("file", new File(["pdf"], "booking.pdf", { type: "application/pdf" }));
     mocks.createSupabaseServerClient.mockResolvedValue({});
     mocks.createSupabaseRepository.mockReturnValue({ repo: true });
-    mocks.uploadEvidence.mockResolvedValue({ upload: { id: "upload-1" }, job: { id: "job-1" }, dispatched: true });
+    mocks.uploadEvidence.mockResolvedValue({ upload: { id: "upload-1" }, job: { id: "job-1" }, scheduled: true });
 
     const response = await POST(
       new Request("https://example.com/api/upload", {
@@ -135,29 +135,8 @@ describe("POST /api/upload", () => {
           traceId: expect.stringMatching(/^[0-9a-f-]{36}$/),
           interactionId: expect.stringMatching(/^[0-9a-f-]{36}$/)
         },
-        dispatch: expect.any(Function)
+        scheduleExtraction: expect.any(Function)
       })
     );
-  });
-
-  it("uses the n8n dispatcher path when configured", async () => {
-    const previousProvider = process.env.EXTRACTION_PROVIDER;
-    process.env.EXTRACTION_PROVIDER = "n8n";
-    const formData = new FormData();
-    formData.set("file", new File(["pdf"], "booking.pdf", { type: "application/pdf" }));
-    mocks.createSupabaseServerClient.mockResolvedValue({});
-    mocks.createSupabaseRepository.mockReturnValue({ repo: true });
-    mocks.uploadEvidence.mockResolvedValue({ upload: { id: "upload-1" }, job: { id: "job-1" }, dispatched: true });
-
-    const response = await POST(uploadRequest(formData));
-
-    expect(response.status).toBe(200);
-    expect(mocks.uploadEvidence).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        dispatch: undefined
-      })
-    );
-    process.env.EXTRACTION_PROVIDER = previousProvider;
   });
 });

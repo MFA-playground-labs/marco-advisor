@@ -81,7 +81,7 @@ export default async function PipelinePage() {
                                 <StatusPill tone={job.status === "succeeded" ? "green" : job.status === "failed" ? "red" : "blue"}>
                                   {job.status}
                                 </StatusPill>
-                                <span className="text-xs font-bold text-slate-500">{job.provider ?? "n8n"}</span>
+                                <span className="text-xs font-bold text-slate-500">{job.provider ?? "openai"}</span>
                               </div>
                               <p className="mt-2 break-all text-xs text-slate-500">{job.id}</p>
                               <p className="mt-2 text-sm text-slate-600">

@@ -36,4 +36,4 @@ where table_schema = 'public'
   and column_name in ('source_job_id', 'source_pages', 'source_snippets', 'extraction_method');
 ```
 
-The app includes a temporary defensive fallback: upload can still create a minimal queued extraction job if `provider`/`model` are missing. Full n8n callback and `/pipeline` verification still require this migration because they use `upload_pages` and candidate source fields.
+The app includes a temporary defensive fallback: upload can still create a minimal queued extraction job if `provider`/`model` are missing. Full OpenAI extraction and `/pipeline` verification still require this migration because they use `upload_pages` and candidate source fields.

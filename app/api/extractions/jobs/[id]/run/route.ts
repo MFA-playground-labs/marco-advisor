@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireExtractionWebhookAuth } from "@/lib/server/extraction-auth";
+import { requireExtractionRunAuth } from "@/lib/server/extraction-run-auth";
 import { errorMessage, errorStatus } from "@/lib/server/errors";
 import { createSupabaseRepository } from "@/lib/server/supabase-repository";
 import { runOpenAiExtractionJob } from "@/lib/server/workflows/run-openai-extraction-job";
@@ -14,7 +14,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const { id } = await params;
 
   try {
-    requireExtractionWebhookAuth(request);
+    requireExtractionRunAuth(request);
     const supabase = createSupabaseAdminClient();
     if (!supabase) return NextResponse.json({ error: "Supabase admin client is not configured." }, { status: 500 });
 

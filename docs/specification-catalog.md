@@ -10,8 +10,8 @@ Primary stack:
 
 - Next.js App Router, React, TypeScript, Tailwind.
 - Supabase Auth, Postgres, Storage, RLS.
-- n8n-first async extraction pipeline.
-- OpenAI Responses API for Marco advisor chat and a legacy/direct extraction helper.
+- OpenAI-first async extraction pipeline.
+- OpenAI Responses API for Marco advisor chat and evidence extraction.
 - Vitest unit coverage for extraction schema, workflow orchestration, scanner logic, and selected repository fallback behavior.
 
 ## 2. Core Runtime Rules
@@ -45,22 +45,21 @@ Required for normal app behavior:
 
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` or legacy `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `OPENAI_API_KEY` for Marco chat and direct extraction helper
+- `OPENAI_API_KEY` for Marco chat and upload extraction
 
-Required for protected async extraction worker endpoints:
+Required for OpenAI extraction:
 
 - `SUPABASE_SERVICE_ROLE_KEY`
-- `EXTRACTION_WEBHOOK_SECRET`
+- `EXTRACTION_RUN_SECRET` for the protected manual retry endpoint
 
 Async extraction configuration:
 
-- `N8N_EXTRACTION_WEBHOOK_URL`: production dispatch target.
-- `N8N_EXTRACTION_TEST_WEBHOOK_URL`: e2e test target.
-- `EXTRACTION_PROVIDER`: defaults to `n8n`.
-- `EXTRACTION_FALLBACK_MODEL`: defaults to `claude-haiku`.
+- `OPENAI_EXTRACTION_MODEL`: defaults to `gpt-4.1-mini`.
+- `OPENAI_EXTRACTION_MAX_ENCODED_BYTES`: defaults to `20971520`.
 - `EXTRACTION_CONFIDENCE_THRESHOLD`: defaults to `0.85`.
 - `EXTRACTION_MAX_PAGES`: defaults to `10`.
 - `EXTRACTION_MAX_TEXT_CHARS`: defaults to `25000`.
+- `EXTRACTION_STALE_PROCESSING_MS`: defaults to `900000`.
 
 ## 4. Persistent Data Contract
 
@@ -130,7 +129,7 @@ Purpose:
 - Store file in Supabase Storage.
 - Create or reuse the active trip.
 - Create an upload row and queued extraction job.
-- Dispatch the job to n8n.
+- Schedule local OpenAI extraction.
 
 Runtime:
 
@@ -145,7 +144,7 @@ Request:
 
 Responses:
 
-- `200` JSON: `{ upload, job, dispatched, warning? }`
+- `200` JSON: `{ upload, job, scheduled, warning? }`
 - `400` JSON when no file is provided or workflow validation fails.
 - `401` JSON when no Supabase user exists.
 - `500` JSON when Supabase is not configured or unexpected failure occurs.
@@ -200,71 +199,25 @@ Delegates:
 - `getActiveTripSnapshot()`
 - `askMarco()`
 
-### `GET /api/extractions/jobs/[id]`
+### `POST /api/extractions/jobs/[id]/run`
 
-Source: `app/api/extractions/jobs/[id]/route.ts`
+Source: `app/api/extractions/jobs/[id]/run/route.ts`
 
 Purpose:
 
-- Worker endpoint for n8n to fetch job metadata and processing limits.
-- If a job is currently `queued`, mark it `processing` and set `started_at`.
+- Protected operator endpoint for retrying a queued or stale OpenAI extraction job.
+- If a job is currently stale `processing`, requeue it before running the OpenAI worker.
 
 Auth:
 
-- Requires `Authorization: Bearer <EXTRACTION_WEBHOOK_SECRET>`.
+- Requires `Authorization: Bearer <EXTRACTION_RUN_SECRET>`.
 - Uses Supabase service role admin client.
 
 Responses:
 
-- `200` JSON with `job`, `upload`, and `limits`.
-- `401` JSON for invalid webhook secret.
+- `200` JSON with the OpenAI worker result.
+- `401` JSON for invalid run secret.
 - `500` JSON when admin Supabase is not configured.
-
-### `GET /api/extractions/jobs/[id]/file`
-
-Source: `app/api/extractions/jobs/[id]/file/route.ts`
-
-Purpose:
-
-- Worker endpoint for n8n to obtain a short-lived signed URL for the uploaded evidence file.
-
-Auth:
-
-- Requires `Authorization: Bearer <EXTRACTION_WEBHOOK_SECRET>`.
-- Uses Supabase service role admin client.
-
-Responses:
-
-- `200` JSON: `{ job_id, upload_id, filename, content_type, signed_url, expires_in }`
-- Signed URL expires after 300 seconds.
-
-### `POST /api/extractions/callback`
-
-Source: `app/api/extractions/callback/route.ts`
-
-Purpose:
-
-- Worker callback for completed async extraction.
-- Persists extracted pages, trip updates, travelers, candidates, warnings, raw result, and final job/upload status.
-
-Auth:
-
-- Requires `Authorization: Bearer <EXTRACTION_WEBHOOK_SECRET>`.
-- Uses Supabase service role admin client.
-
-Request:
-
-- JSON conforming to `extractionCallbackSchema`.
-
-Responses:
-
-- `200` JSON success: `{ status: "succeeded", candidates: number }`
-- `200` JSON failure payload processed: `{ status: "failed", candidates: 0 }`
-- Error JSON on auth/config/schema/workflow failures.
-
-Delegates:
-
-- `completeExtraction()`
 
 ### `POST /api/trips`
 
@@ -328,14 +281,14 @@ Purpose:
 - Validate and store a user-uploaded evidence file.
 - Ensure an active trip exists.
 - Create upload and extraction job records.
-- Dispatch extraction job to n8n.
+- Schedule OpenAI extraction.
 - Cleanup or mark failure on errors.
 
 Inputs:
 
 - `file`: `File`
 - `tripName`, `destination`, `startsOn`, `endsOn`: strings
-- Dependencies: subset of repository methods plus optional `dispatch`
+- Dependencies: subset of repository methods plus optional `scheduleExtraction`
 
 Rules:
 
@@ -344,53 +297,15 @@ Rules:
 - Reuse the current active trip if present; otherwise create a trip using form values or `fallbackTripName(file.name)`.
 - Store the file under `<ownerId>/<uuid>-<sanitizedFilename>`.
 - Create upload with status `uploaded`.
-- Create extraction job with status `queued`, provider from `EXTRACTION_PROVIDER` or `n8n`, model from `EXTRACTION_FALLBACK_MODEL` or `claude-haiku`.
-- Dispatch `{ jobId, uploadId, tripId }`.
-- If dispatch fails, keep the job and store warning/error metadata where the current DB schema supports it.
+- Create extraction job with status `queued`, provider `openai`, and model from `OPENAI_EXTRACTION_MODEL` or `gpt-4.1-mini`.
+- Schedule `{ jobId, uploadId, tripId }`.
 - On failure after upload row exists, mark upload `failed`.
 - On failure after job exists, mark job `failed` with `completed_at`.
 - On failure before upload row exists, remove the uploaded storage object if possible.
 
 Return:
 
-- `{ upload, job, dispatched, warning? }`
-
-### `completeExtraction(repo, payload)`
-
-Source: `lib/server/workflows/complete-extraction.ts`
-
-Purpose:
-
-- Apply n8n extraction callback payload to Supabase records.
-
-Payload schema:
-
-- `job_id`: required string.
-- `status`: `succeeded` or `failed`.
-- `pages`: optional array of page text with confidence.
-- `trip`: optional trip metadata.
-- `bookings`: optional extracted booking candidates.
-- `warnings`: string array.
-- `provider`: defaults to `n8n`.
-- `model`: nullable.
-- `error_message`: nullable.
-- `raw_result`: optional unknown JSON-serializable data.
-
-Failure callback rules:
-
-- Mark upload `failed`.
-- Mark job `failed`, set `error_message`, `provider`, `model`, `warnings`, `raw_result`, `completed_at`.
-- Return `{ status: "failed", candidates: 0 }`.
-
-Success callback rules:
-
-- Replace upload pages for the job when pages are present.
-- Update trip name/destination/dates only for provided non-null values.
-- Upsert travelers by `(trip_id, name)`.
-- Insert candidates with status `needs_review` and source metadata.
-- Mark upload `review_ready`.
-- Mark job `succeeded`, persist provider/model/warnings/raw result/completed timestamp.
-- Return `{ status: "succeeded", candidates: parsed.bookings.length }`.
+- `{ upload, job, scheduled, warning? }`
 
 ### `reviewCandidate(repo, id, intent)`
 
@@ -552,19 +467,19 @@ Supported booking types:
 Supported extraction methods:
 
 - `rules`
-- `haiku`
+- `openai`
 - `manual`
 
 ### OpenAI Service
 
 Source: `lib/openai-extract.ts`
 
-- `extractBookingsFromUpload(input)`: direct OpenAI extraction helper. Requires `OPENAI_API_KEY`, accepts text, image data URL, file data, or OpenAI file id, and validates output against `extractionResultSchema`.
+- `extractBookingsFromUpload(input)`: OpenAI extraction helper. Requires `OPENAI_API_KEY`, accepts text, image data URL, file data, or OpenAI file id, and validates output against `extractionResultSchema`.
 - `askMarco(input)`: advisor chat helper. If `OPENAI_API_KEY` is missing, returns a configured-but-not-ready message. Otherwise asks OpenAI using trip context and a safety instruction that Marco must not claim to book or cancel anything.
 
 Current architecture note:
 
-- The active upload workflow dispatches n8n rather than calling `extractBookingsFromUpload()` directly. Treat direct extraction as available/legacy unless a future spec intentionally reintroduces it into the upload path.
+- The active upload workflow schedules `runOpenAiExtractionJob()`, which downloads the private upload through the Supabase service-role client, prepares the OpenAI input, calls `extractBookingsFromUpload()`, and completes the job through the atomic database RPC.
 
 ### Supabase Client Services
 
@@ -587,12 +502,11 @@ Source: `lib/server/errors.ts`
 - `errorMessage(error, fallback)`: returns workflow/direct error message, replacing schema cache errors with migration guidance.
 - `errorStatus(error, fallback)`: returns `WorkflowError.status`, otherwise fallback.
 
-### Extraction Auth and Dispatch
+### Extraction Run Auth
 
-Sources: `lib/server/extraction-auth.ts`, `lib/server/extraction-dispatch.ts`
+Source: `lib/server/extraction-run-auth.ts`
 
-- `requireExtractionWebhookAuth(request)`: requires configured `EXTRACTION_WEBHOOK_SECRET` and matching bearer token.
-- `dispatchExtractionJob(input)`: posts job/upload/trip ids to `N8N_EXTRACTION_WEBHOOK_URL`. Returns `{ ok: false, warning }` instead of throwing for missing URL, non-2xx response, or fetch failure.
+- `requireExtractionRunAuth(request)`: requires configured `EXTRACTION_RUN_SECRET` and matching bearer token.
 
 ### Utility Functions
 
@@ -698,13 +612,11 @@ Current coverage:
 
 - Upload file validation rejects unsupported MIME types.
 - Upload file validation accepts first-wave image evidence types: PNG, JPEG, and WebP.
-- `uploadEvidence()` stores upload, creates queued job, dispatches job, records dispatch warnings, preserves fallback schema behavior, and returns migration warnings.
+- `uploadEvidence()` stores upload, creates queued OpenAI job, schedules extraction, preserves fallback schema behavior, and returns migration warnings.
 - Schema cache errors map to async extraction migration guidance.
 - Repository retries extraction job insert against old schema when async columns are absent.
-- Webhook auth rejects missing/invalid secrets.
-- Worker metadata route claims jobs through the atomic extraction job claim boundary.
-- Worker file endpoint returns original upload metadata and a 300-second signed URL.
-- `completeExtraction()` validates callback payloads and delegates terminal state persistence to the atomic extraction completion boundary.
+- Extraction run auth rejects missing/invalid secrets.
+- OpenAI worker route retries queued and stale processing jobs.
 - `reviewCandidate()` maps candidates into bookings and segments before accepting.
 - `runTripScan()` replaces persisted issues for the active trip.
 - `scanTrip()` detects hotel overlaps and gap nights.
@@ -715,7 +627,7 @@ Recommended next specs/tests:
 
 - API route contract tests for each route status branch.
 - Repository integration tests against a local Supabase database for RLS assumptions and storage policies.
-- Browser-level workflow test: upload -> n8n callback simulation -> candidate accept -> scanner -> dashboard update.
+- Browser-level workflow test: upload -> OpenAI extraction -> candidate accept -> scanner -> dashboard update.
 - Tests for `outside_trip_dates`, `missing_details`, and `cancellation_deadline` scanner rules.
 - Tests for `/auth/callback` redirect safety.
 - Tests for `getActiveTripSnapshot()` demo/private fallback precedence.
@@ -728,12 +640,11 @@ These are places where the code has behavior but future spec-driven development 
 - Candidate rejection has no audit trail or undo behavior.
 - `bookings` and `booking_segments` are created without transaction semantics; partial creation is possible if segment creation fails after booking insertion.
 - `UploadRecord.trip_id` and `ExtractionJob.trip_id` are nullable in TypeScript but not nullable in the schema for current migrations.
-- `extractBookingsFromUpload()` is not wired into the main upload flow.
 - Scanner date logic uses current wall-clock time for cancellation deadlines, which makes tests around deadlines time-sensitive unless clock injection is introduced.
 - Timeline positioning is index-based rather than date-proportional, so it is visual guidance rather than a precise calendar spec.
 - Itinerary preference sliders are presentational and not persisted.
 - Marco chat does not currently stream, persist conversations, or enforce prompt/token limits in app code.
-- Worker endpoints use service role and bearer secret; n8n access scope and operational rotation policy are not documented.
+- Manual extraction retry uses service role and bearer secret; operational rotation policy is not documented.
 - Stale `processing` extraction jobs are visible but do not yet have an automatic retry scheduler or user-facing retry action.
 
 ## 12. Spec Visibility And Archive

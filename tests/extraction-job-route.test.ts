@@ -19,7 +19,6 @@ vi.mock("@/lib/server/workflows/run-openai-extraction-job", () => ({
   runOpenAiExtractionJob: mocks.runOpenAiExtractionJob
 }));
 
-import { GET } from "@/app/api/extractions/jobs/[id]/route";
 import { POST } from "@/app/api/extractions/jobs/[id]/run/route";
 
 const upload: UploadRecord = {
@@ -37,8 +36,8 @@ const job: ExtractionJob & { upload: UploadRecord } = {
   upload_id: upload.id,
   trip_id: "trip-1",
   status: "queued",
-  provider: "n8n",
-  model: "claude-haiku",
+  provider: "openai",
+  model: "gpt-4.1-mini",
   error_message: null,
   warnings: [],
   upload
@@ -54,111 +53,20 @@ function params() {
   return { params: Promise.resolve({ id: "job-1" }) };
 }
 
-describe("GET /api/extractions/jobs/[id]", () => {
-  const previousSecret = process.env.EXTRACTION_WEBHOOK_SECRET;
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    process.env.EXTRACTION_WEBHOOK_SECRET = "secret";
-  });
-
-  afterEach(() => {
-    process.env.EXTRACTION_WEBHOOK_SECRET = previousSecret;
-  });
-
-  it("returns 401 for invalid worker auth without touching Supabase", async () => {
-    const response = await GET(new Request("https://example.com/api/extractions/jobs/job-1"), params());
-
-    expect(response.status).toBe(401);
-    await expect(response.json()).resolves.toEqual({ error: "Invalid extraction webhook secret." });
-    expect(mocks.createSupabaseAdminClient).not.toHaveBeenCalled();
-  });
-
-  it("returns 500 when the admin client is not configured", async () => {
-    mocks.createSupabaseAdminClient.mockReturnValue(null);
-
-    const response = await GET(authedRequest(), params());
-
-    expect(response.status).toBe(500);
-    await expect(response.json()).resolves.toEqual({ error: "Supabase admin client is not configured." });
-    expect(mocks.createSupabaseRepository).not.toHaveBeenCalled();
-  });
-
-  it("marks queued jobs processing and returns the claimed status", async () => {
-    const repo = {
-      claimExtractionJob: vi.fn().mockResolvedValue({
-        ...job,
-        status: "processing",
-        started_at: "2026-06-14T00:00:00.000Z",
-        claimed: true
-      })
-    };
-    mocks.createSupabaseAdminClient.mockReturnValue({});
-    mocks.createSupabaseRepository.mockReturnValue(repo);
-
-    const response = await GET(authedRequest(), params());
-    const payload = await response.json();
-
-    expect(response.status).toBe(200);
-    expect(repo.claimExtractionJob).toHaveBeenCalledWith(job.id);
-    expect(payload).toMatchObject({
-      job: {
-        id: job.id,
-        status: "processing",
-        started_at: "2026-06-14T00:00:00.000Z",
-        warnings: []
-      },
-      upload: {
-        id: upload.id,
-        content_type: "image/png"
-      },
-      limits: {
-        max_pages: 10,
-        max_text_chars: 25000,
-        confidence_threshold: 0.85
-      }
-    });
-  });
-
-  it("does not reclaim already terminal jobs", async () => {
-    const repo = {
-      claimExtractionJob: vi.fn().mockResolvedValue({
-        ...job,
-        status: "succeeded",
-        started_at: "2026-06-14T00:00:00.000Z",
-        claimed: false
-      })
-    };
-    mocks.createSupabaseAdminClient.mockReturnValue({});
-    mocks.createSupabaseRepository.mockReturnValue(repo);
-
-    const response = await GET(authedRequest(), params());
-    const payload = await response.json();
-
-    expect(response.status).toBe(200);
-    expect(repo.claimExtractionJob).toHaveBeenCalledWith(job.id);
-    expect(payload.job).toMatchObject({
-      id: job.id,
-      status: "succeeded",
-      started_at: "2026-06-14T00:00:00.000Z"
-    });
-  });
-});
-
 describe("POST /api/extractions/jobs/[id]/run", () => {
-  const previousSecret = process.env.EXTRACTION_WEBHOOK_SECRET;
+  const previousSecret = process.env.EXTRACTION_RUN_SECRET;
   const previousStaleMs = process.env.EXTRACTION_STALE_PROCESSING_MS;
 
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useRealTimers();
-    process.env.EXTRACTION_WEBHOOK_SECRET = "secret";
+    process.env.EXTRACTION_RUN_SECRET = "secret";
     process.env.EXTRACTION_STALE_PROCESSING_MS = "900000";
     mocks.runOpenAiExtractionJob.mockResolvedValue({ status: "succeeded", claimed: true });
   });
 
   afterEach(() => {
-    process.env.EXTRACTION_WEBHOOK_SECRET = previousSecret;
+    process.env.EXTRACTION_RUN_SECRET = previousSecret;
     process.env.EXTRACTION_STALE_PROCESSING_MS = previousStaleMs;
     vi.useRealTimers();
   });
@@ -167,7 +75,7 @@ describe("POST /api/extractions/jobs/[id]/run", () => {
     const response = await POST(new Request("https://example.com/api/extractions/jobs/job-1/run"), params());
 
     expect(response.status).toBe(401);
-    await expect(response.json()).resolves.toEqual({ error: "Invalid extraction webhook secret." });
+    await expect(response.json()).resolves.toEqual({ error: "Invalid extraction run secret." });
     expect(mocks.createSupabaseAdminClient).not.toHaveBeenCalled();
     expect(mocks.runOpenAiExtractionJob).not.toHaveBeenCalled();
   });
