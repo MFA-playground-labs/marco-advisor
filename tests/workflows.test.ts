@@ -341,6 +341,86 @@ describe("workflow error messages", () => {
 });
 
 describe("supabase repository", () => {
+  it("falls back to the latest trip when archived_at is not migrated yet", async () => {
+    const filters: unknown[] = [];
+    const maybeSingle = vi
+      .fn()
+      .mockResolvedValueOnce({
+        data: null,
+        error: { message: "column trips.archived_at does not exist" }
+      })
+      .mockResolvedValueOnce({ data: trip, error: null });
+    const supabase = {
+      from(table: string) {
+        return {
+          select(columns: string) {
+            filters.push({ table, select: columns });
+            return this;
+          },
+          eq(column: string, value: unknown) {
+            filters.push({ eq: [column, value] });
+            return this;
+          },
+          is(column: string, value: unknown) {
+            filters.push({ is: [column, value] });
+            return this;
+          },
+          order(column: string, options?: unknown) {
+            filters.push({ order: [column, options] });
+            return this;
+          },
+          limit(count: number) {
+            filters.push({ limit: count });
+            return this;
+          },
+          maybeSingle
+        };
+      }
+    };
+
+    const repo = createSupabaseRepository(supabase as any);
+    await expect(repo.getActiveTrip(user.id)).resolves.toEqual(trip);
+
+    expect(maybeSingle).toHaveBeenCalledTimes(2);
+    expect(filters).toContainEqual({ is: ["archived_at", null] });
+  });
+
+  it("falls back to an owner trip lookup when selected-trip archive filtering is not migrated yet", async () => {
+    const filters: unknown[] = [];
+    const maybeSingle = vi
+      .fn()
+      .mockResolvedValueOnce({
+        data: null,
+        error: { message: "Could not find the 'archived_at' column of 'trips' in the schema cache" }
+      })
+      .mockResolvedValueOnce({ data: trip, error: null });
+    const supabase = {
+      from(table: string) {
+        return {
+          select(columns: string) {
+            filters.push({ table, select: columns });
+            return this;
+          },
+          eq(column: string, value: unknown) {
+            filters.push({ eq: [column, value] });
+            return this;
+          },
+          is(column: string, value: unknown) {
+            filters.push({ is: [column, value] });
+            return this;
+          },
+          maybeSingle
+        };
+      }
+    };
+
+    const repo = createSupabaseRepository(supabase as any);
+    await expect(repo.getTripForOwner(user.id, trip.id)).resolves.toEqual(trip);
+
+    expect(maybeSingle).toHaveBeenCalledTimes(2);
+    expect(filters).toContainEqual({ is: ["archived_at", null] });
+  });
+
   it("retries extraction job creation with the old schema when async metadata is missing", async () => {
     const inserted: unknown[] = [];
     const supabase = {

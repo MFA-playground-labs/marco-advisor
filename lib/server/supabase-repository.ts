@@ -85,6 +85,12 @@ function listData<T>(data: T[] | null, error: { message: string } | null): T[] {
   return data ?? [];
 }
 
+function isMissingTripArchivedAtError(message: string | undefined) {
+  if (!message) return false;
+  const normalized = message.toLowerCase();
+  return normalized.includes("trips.archived_at") || (normalized.includes("archived_at") && normalized.includes("schema cache"));
+}
+
 function claimedExtractionJobFromRpc(row: any): ClaimedExtractionJob {
   return {
     id: row.id,
@@ -142,15 +148,27 @@ export function createSupabaseRepository(supabase: AppSupabaseClient) {
     },
 
     async getActiveTrip(ownerId: string) {
-      const { data, error } = await db
+      const query = db
         .from("trips")
         .select("*")
         .eq("owner_id", ownerId)
         .is("archived_at", null)
         .order("updated_at", { ascending: false })
         .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .limit(1);
+      const { data, error } = await query.maybeSingle();
+      if (isMissingTripArchivedAtError(error?.message)) {
+        const fallback = await db
+          .from("trips")
+          .select("*")
+          .eq("owner_id", ownerId)
+          .order("updated_at", { ascending: false })
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (fallback.error) dbError(fallback.error.message);
+        return (fallback.data as Trip | null) ?? null;
+      }
       if (error) dbError(error.message);
       return (data as Trip | null) ?? null;
     },
@@ -167,6 +185,16 @@ export function createSupabaseRepository(supabase: AppSupabaseClient) {
       }
 
       const { data, error } = await query.maybeSingle();
+      if (!options.includeArchived && isMissingTripArchivedAtError(error?.message)) {
+        const fallback = await db
+          .from("trips")
+          .select("*")
+          .eq("owner_id", ownerId)
+          .eq("id", tripId)
+          .maybeSingle();
+        if (fallback.error) dbError(fallback.error.message);
+        return (fallback.data as Trip | null) ?? null;
+      }
       if (error) dbError(error.message);
       return (data as Trip | null) ?? null;
     },
