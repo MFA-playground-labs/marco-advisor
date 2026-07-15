@@ -7,7 +7,10 @@ export async function runTripScan(
   tripId?: string | null
 ) {
   const user = await repo.requireUser("scanning trips");
-  const trip = tripId ? await repo.getTripForOwner(user.id, tripId) : await repo.getActiveTrip(user.id);
+  let trip = tripId ? await repo.getTripForOwner(user.id, tripId) : await repo.getActiveTrip(user.id);
+  if (!trip && tripId) {
+    trip = await repo.getActiveTrip(user.id);
+  }
   if (!trip) throw new WorkflowError("No active trip.", 404);
 
   const bookings = await repo.getBookingsForTrip(trip.id);

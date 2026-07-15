@@ -2,6 +2,7 @@ import type { PipelineSnapshot, Trip, TripList, TripSnapshot } from "@/lib/types
 import { createSupabaseServerClient } from "@/lib/supabase";
 import { calculateFinancialExposure, calculateReadiness } from "@/lib/scanner";
 import { createSupabaseRepository } from "@/lib/server/supabase-repository";
+import { resolveActiveTrip } from "@/lib/server/active-trip";
 import { getSelectedTripId } from "@/lib/server/trip-selection";
 
 export async function getActiveTripSnapshot(): Promise<TripSnapshot> {
@@ -13,12 +14,12 @@ export async function getActiveTripSnapshot(): Promise<TripSnapshot> {
 
   if (!user) return loadDemoTripSnapshot(repo);
 
-  const selectedTripId = await getSelectedTripId();
-  const snapshot = selectedTripId
-    ? (await repo.getTripSnapshotForUser(user, selectedTripId)) ?? (await repo.getTripSnapshotForUser(user))
-    : await repo.getTripSnapshotForUser(user);
+  const resolution = await resolveActiveTrip(repo, user, await getSelectedTripId());
+  if (!resolution.trip) {
+    return resolution.hasPrivateTrips ? emptySnapshot() : loadDemoTripSnapshot(repo);
+  }
 
-  return snapshot ?? loadDemoTripSnapshot(repo);
+  return (await repo.getTripSnapshot(resolution.trip)) ?? emptySnapshot();
 }
 
 export async function getPipelineSnapshot(): Promise<PipelineSnapshot> {
@@ -29,10 +30,10 @@ export async function getPipelineSnapshot(): Promise<PipelineSnapshot> {
   const user = await repo.getCurrentUser();
   if (!user) return emptyPipelineSnapshot();
 
-  const selectedTripId = await getSelectedTripId();
-  const snapshot = selectedTripId
-    ? (await repo.getPipelineSnapshotForUser(user, selectedTripId)) ?? (await repo.getPipelineSnapshotForUser(user))
-    : await repo.getPipelineSnapshotForUser(user);
+  const resolution = await resolveActiveTrip(repo, user, await getSelectedTripId());
+  if (!resolution.trip) return emptyPipelineSnapshot();
+
+  const snapshot = await repo.getPipelineSnapshotForUser(user, resolution.trip.id);
   return snapshot ?? emptyPipelineSnapshot();
 }
 

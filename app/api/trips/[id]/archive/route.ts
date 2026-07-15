@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase";
 import { errorMessage, errorStatus } from "@/lib/server/errors";
 import { createSupabaseRepository } from "@/lib/server/supabase-repository";
+import { logTripLifecycleEvent } from "@/lib/server/trip-observability";
 import { clearSelectedTripCookie, getSelectedTripId } from "@/lib/server/trip-selection";
 
 type Params = {
@@ -21,8 +22,19 @@ export async function POST(_request: Request, { params }: Params) {
     if ((await getSelectedTripId()) === id) {
       clearSelectedTripCookie(response);
     }
+    logTripLifecycleEvent({
+      event: "marco.trip_archived",
+      userId: user.id,
+      tripId: trip.id,
+      status: "succeeded"
+    });
     return response;
   } catch (error) {
+    logTripLifecycleEvent({
+      event: "marco.trip_archive_failed",
+      status: "failed",
+      errorMessage: errorMessage(error, "Trip archive failed.")
+    });
     return NextResponse.json({ error: errorMessage(error, "Trip archive failed.") }, { status: errorStatus(error) });
   }
 }

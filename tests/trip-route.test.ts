@@ -99,6 +99,23 @@ describe("trip routes", () => {
     expect(response.headers.get("set-cookie")).toContain("marco_selected_trip_id=trip-1");
   });
 
+  it("rejects invalid and reversed trip dates on create", async () => {
+    const repo = {
+      requireUser: vi.fn().mockResolvedValue(user),
+      createTrip: vi.fn()
+    };
+    mocks.createSupabaseRepository.mockReturnValue(repo);
+
+    const invalid = await POST(jsonRequest({ name: "Italy", starts_on: "2026-99-99" }));
+    const reversed = await POST(jsonRequest({ name: "Italy", starts_on: "2026-06-10", ends_on: "2026-06-01" }));
+
+    expect(invalid.status).toBe(400);
+    await expect(invalid.json()).resolves.toEqual({ error: "Trip start date must be a valid YYYY-MM-DD date." });
+    expect(reversed.status).toBe(400);
+    await expect(reversed.json()).resolves.toEqual({ error: "Trip end date must be on or after the start date." });
+    expect(repo.createTrip).not.toHaveBeenCalled();
+  });
+
   it("updates owned trip metadata", async () => {
     const repo = {
       requireUser: vi.fn().mockResolvedValue(user),
@@ -115,6 +132,23 @@ describe("trip routes", () => {
       starts_on: null,
       ends_on: null
     });
+  });
+
+  it("rejects invalid and reversed trip dates on update", async () => {
+    const repo = {
+      requireUser: vi.fn().mockResolvedValue(user),
+      updateOwnedTrip: vi.fn()
+    };
+    mocks.createSupabaseRepository.mockReturnValue(repo);
+
+    const invalid = await PATCH(jsonRequest({ name: "Rome", ends_on: "not-a-date" }), params());
+    const reversed = await PATCH(jsonRequest({ name: "Rome", starts_on: "2026-06-10", ends_on: "2026-06-01" }), params());
+
+    expect(invalid.status).toBe(400);
+    await expect(invalid.json()).resolves.toEqual({ error: "Trip end date must be a valid YYYY-MM-DD date." });
+    expect(reversed.status).toBe(400);
+    await expect(reversed.json()).resolves.toEqual({ error: "Trip end date must be on or after the start date." });
+    expect(repo.updateOwnedTrip).not.toHaveBeenCalled();
   });
 
   it("selects only a non-archived owned trip", async () => {

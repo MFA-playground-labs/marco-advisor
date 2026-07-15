@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
+import { normalizeTripMetadataInput } from "@/lib/domain/trip";
 import { createSupabaseServerClient } from "@/lib/supabase";
 import { WorkflowError, errorMessage, errorStatus } from "@/lib/server/errors";
 import { createSupabaseRepository } from "@/lib/server/supabase-repository";
+import { logTripLifecycleEvent } from "@/lib/server/trip-observability";
 import { setSelectedTripCookie } from "@/lib/server/trip-selection";
 
 export async function GET() {
@@ -20,6 +22,11 @@ export async function GET() {
       past: active.filter((trip) => isPastTrip(trip.ends_on))
     });
   } catch (error) {
+    logTripLifecycleEvent({
+      event: "marco.trip_list_failed",
+      status: "failed",
+      errorMessage: errorMessage(error, "Trip listing failed.")
+    });
     return NextResponse.json({ error: errorMessage(error, "Trip listing failed.") }, { status: errorStatus(error) });
   }
 }
@@ -32,7 +39,7 @@ export async function POST(request: Request) {
   try {
     const user = await repo.requireUser("creating trips");
     const body = await request.json();
-    const input = tripInput(body);
+    const input = requireTripMetadata(body);
     const trip = await repo.createTrip({
       owner_id: user.id,
       name: input.name,
@@ -40,31 +47,29 @@ export async function POST(request: Request) {
       starts_on: input.starts_on,
       ends_on: input.ends_on
     });
+    logTripLifecycleEvent({
+      event: "marco.trip_created",
+      userId: user.id,
+      tripId: trip.id,
+      status: "succeeded"
+    });
     const response = NextResponse.json({ trip });
     setSelectedTripCookie(response, trip.id);
     return response;
   } catch (error) {
+    logTripLifecycleEvent({
+      event: "marco.trip_create_failed",
+      status: "failed",
+      errorMessage: errorMessage(error, "Trip creation failed.")
+    });
     return NextResponse.json({ error: errorMessage(error, "Trip creation failed.") }, { status: errorStatus(error) });
   }
 }
 
-function tripInput(body: any) {
-  const name = String(body?.name ?? "").trim();
-  if (!name) {
-    throw new WorkflowError("Trip name is required.", 400);
-  }
-
-  return {
-    name,
-    destination: nullableString(body?.destination),
-    starts_on: nullableString(body?.starts_on),
-    ends_on: nullableString(body?.ends_on)
-  };
-}
-
-function nullableString(value: unknown) {
-  const normalized = String(value ?? "").trim();
-  return normalized || null;
+function requireTripMetadata(body: any) {
+  const { input, error } = normalizeTripMetadataInput(body);
+  if (error || !input) throw new WorkflowError(error ?? "Invalid trip metadata.", 400);
+  return input;
 }
 
 function isPastTrip(endsOn: string | null) {

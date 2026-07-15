@@ -18,7 +18,7 @@ import {
   X,
   BriefcaseBusiness
 } from "lucide-react";
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { cn } from "@/lib/utils";
 import type { TripList } from "@/lib/types";
 
@@ -38,17 +38,26 @@ export function AppShell({ children, tripList }: { children: React.ReactNode; tr
   const pathname = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [isSelecting, startTransition] = useTransition();
+  const [selectingTripId, setSelectingTripId] = useState<string | null>(null);
+  const [selectionError, setSelectionError] = useState("");
   const selectedTrip = tripList.active.find((trip) => trip.id === tripList.selectedTripId) ?? null;
 
-  function selectTrip(tripId: string) {
+  async function selectTrip(tripId: string) {
     if (!tripId || tripId === tripList.selectedTripId) return;
-    startTransition(async () => {
+    setSelectionError("");
+    setSelectingTripId(tripId);
+    try {
       const response = await fetch(`/api/trips/${tripId}/select`, { method: "POST" });
-      if (response.ok) {
-        router.refresh();
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.error ?? "Trip selection failed.");
       }
-    });
+      router.refresh();
+    } catch (error) {
+      setSelectionError(error instanceof Error ? error.message : "Trip selection failed.");
+    } finally {
+      setSelectingTripId(null);
+    }
   }
 
   return (
@@ -97,8 +106,8 @@ export function AppShell({ children, tripList }: { children: React.ReactNode; tr
                 aria-label="Select active trip"
                 className="mt-2 w-full rounded-md border border-white/10 bg-sidebar px-2 py-2 font-bold text-white"
                 value={selectedTrip?.id ?? ""}
-                disabled={isSelecting}
-                onChange={(event) => selectTrip(event.target.value)}
+                disabled={Boolean(selectingTripId)}
+                onChange={(event) => void selectTrip(event.target.value)}
               >
                 {tripList.active.map((trip) => (
                   <option key={trip.id} value={trip.id}>
@@ -115,6 +124,9 @@ export function AppShell({ children, tripList }: { children: React.ReactNode; tr
                 </Link>
               )}
             </div>
+            <p aria-live="polite" className="mt-2 min-h-4 text-xs font-semibold text-red-200">
+              {selectingTripId ? "Switching trip..." : selectionError}
+            </p>
           </div>
         </div>
 

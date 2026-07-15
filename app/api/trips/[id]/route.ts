@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
+import { normalizeTripMetadataInput } from "@/lib/domain/trip";
 import { createSupabaseServerClient } from "@/lib/supabase";
 import { WorkflowError, errorMessage, errorStatus } from "@/lib/server/errors";
 import { createSupabaseRepository } from "@/lib/server/supabase-repository";
+import { logTripLifecycleEvent } from "@/lib/server/trip-observability";
 
 type Params = {
   params: Promise<{ id: string }>;
@@ -16,26 +18,26 @@ export async function PATCH(request: Request, { params }: Params) {
     const user = await repo.requireUser("updating trips");
     const { id } = await params;
     const body = await request.json();
-    const trip = await repo.updateOwnedTrip(user.id, id, tripUpdateInput(body));
+    const trip = await repo.updateOwnedTrip(user.id, id, requireTripMetadata(body));
+    logTripLifecycleEvent({
+      event: "marco.trip_updated",
+      userId: user.id,
+      tripId: trip.id,
+      status: "succeeded"
+    });
     return NextResponse.json({ trip });
   } catch (error) {
+    logTripLifecycleEvent({
+      event: "marco.trip_update_failed",
+      status: "failed",
+      errorMessage: errorMessage(error, "Trip update failed.")
+    });
     return NextResponse.json({ error: errorMessage(error, "Trip update failed.") }, { status: errorStatus(error) });
   }
 }
 
-function tripUpdateInput(body: any) {
-  const name = String(body?.name ?? "").trim();
-  if (!name) throw new WorkflowError("Trip name is required.", 400);
-
-  return {
-    name,
-    destination: nullableString(body?.destination),
-    starts_on: nullableString(body?.starts_on),
-    ends_on: nullableString(body?.ends_on)
-  };
-}
-
-function nullableString(value: unknown) {
-  const normalized = String(value ?? "").trim();
-  return normalized || null;
+function requireTripMetadata(body: any) {
+  const { input, error } = normalizeTripMetadataInput(body);
+  if (error || !input) throw new WorkflowError(error ?? "Invalid trip metadata.", 400);
+  return input;
 }

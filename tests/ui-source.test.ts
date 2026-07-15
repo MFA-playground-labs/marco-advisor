@@ -58,6 +58,10 @@ describe("UI source contracts", () => {
     expect(tripManager).toContain("Archived Trips");
     expect(tripManager).toContain("/api/trips/${tripId}/archive");
     expect(tripManager).toContain("/api/trips/${tripId}/restore");
+    expect(tripManager).toContain("busyAction");
+    expect(tripManager).toContain("aria-live=\"polite\"");
+    expect(appShell).toContain("selectionError");
+    expect(appShell).toContain("Switching trip...");
     expect(uploadPanel).toContain("Evidence will be added to");
   });
 

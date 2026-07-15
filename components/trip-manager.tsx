@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Archive, Check, RotateCcw } from "lucide-react";
 import { Card, StatusPill } from "@/components/ui";
@@ -10,7 +10,8 @@ import { dateRange } from "@/lib/utils";
 export function TripManager({ tripList }: { tripList: TripList }) {
   const router = useRouter();
   const [status, setStatus] = useState("");
-  const [isPending, startTransition] = useTransition();
+  const [busyAction, setBusyAction] = useState<string | null>(null);
+  const busy = Boolean(busyAction);
 
   async function submitJson(url: string, init: RequestInit) {
     const response = await fetch(url, {
@@ -32,59 +33,60 @@ export function TripManager({ tripList }: { tripList: TripList }) {
     return payload;
   }
 
-  function run(action: () => Promise<void>, message: string) {
+  async function run(action: () => Promise<void>, message: string, actionId: string) {
     setStatus("");
-    startTransition(async () => {
-      try {
-        await action();
-        setStatus(message);
-        router.refresh();
-      } catch (error) {
-        setStatus(error instanceof Error ? error.message : "Trip action failed.");
-      }
-    });
+    setBusyAction(actionId);
+    try {
+      await action();
+      setStatus(message);
+      router.refresh();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Trip action failed.");
+    } finally {
+      setBusyAction(null);
+    }
   }
 
   function createTrip(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
     const formData = new FormData(form);
-    run(async () => {
+    void run(async () => {
       await submitJson("/api/trips", {
         method: "POST",
         body: JSON.stringify(formPayload(formData))
       });
       form.reset();
-    }, "Trip created and selected.");
+    }, "Trip created and selected.", "create");
   }
 
   function updateTrip(event: React.FormEvent<HTMLFormElement>, tripId: string) {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
-    run(async () => {
+    void run(async () => {
       await submitJson(`/api/trips/${tripId}`, {
         method: "PATCH",
         body: JSON.stringify(formPayload(formData))
       });
-    }, "Trip updated.");
+    }, "Trip updated.", `update-${tripId}`);
   }
 
   function selectTrip(tripId: string) {
-    run(async () => {
+    void run(async () => {
       await submitAction(`/api/trips/${tripId}/select`);
-    }, "Trip selected.");
+    }, "Trip selected.", `select-${tripId}`);
   }
 
   function archiveTrip(tripId: string) {
-    run(async () => {
+    void run(async () => {
       await submitAction(`/api/trips/${tripId}/archive`);
-    }, "Trip archived.");
+    }, "Trip archived.", `archive-${tripId}`);
   }
 
   function restoreTrip(tripId: string) {
-    run(async () => {
+    void run(async () => {
       await submitAction(`/api/trips/${tripId}/restore`);
-    }, "Trip restored and selected.");
+    }, "Trip restored and selected.", `restore-${tripId}`);
   }
 
   return (
@@ -101,7 +103,7 @@ export function TripManager({ tripList }: { tripList: TripList }) {
                   key={trip.id}
                   trip={trip}
                   selected={trip.id === tripList.selectedTripId}
-                  disabled={isPending}
+                  disabled={busy}
                   onSubmit={updateTrip}
                   onSelect={selectTrip}
                   onArchive={archiveTrip}
@@ -125,7 +127,7 @@ export function TripManager({ tripList }: { tripList: TripList }) {
                   </div>
                   <button
                     type="button"
-                    disabled={isPending}
+                    disabled={busy}
                     onClick={() => archiveTrip(trip.id)}
                     className="inline-flex items-center gap-2 rounded-lg bg-ink px-4 py-2 text-sm font-black text-white disabled:opacity-60"
                   >
@@ -144,11 +146,13 @@ export function TripManager({ tripList }: { tripList: TripList }) {
           <h2 className="font-display text-2xl font-bold">Create Trip</h2>
           <form onSubmit={createTrip} className="mt-4 space-y-3">
             <TripFields />
-            <button disabled={isPending} className="w-full rounded-lg bg-ink px-4 py-3 text-sm font-black text-white disabled:opacity-60">
+            <button disabled={busy} className="w-full rounded-lg bg-ink px-4 py-3 text-sm font-black text-white disabled:opacity-60">
               Create and select
             </button>
           </form>
-          {status && <p className="mt-4 text-sm font-semibold text-slate-600">{status}</p>}
+          <p aria-live="polite" className="mt-4 min-h-5 text-sm font-semibold text-slate-600">
+            {busyAction ? "Working..." : status}
+          </p>
         </Card>
 
         <Card className="p-5">
@@ -166,7 +170,7 @@ export function TripManager({ tripList }: { tripList: TripList }) {
                     </div>
                     <button
                       type="button"
-                      disabled={isPending}
+                      disabled={busy}
                       onClick={() => restoreTrip(trip.id)}
                       className="inline-flex items-center gap-1 rounded-lg border border-line px-3 py-2 text-xs font-black disabled:opacity-60"
                     >

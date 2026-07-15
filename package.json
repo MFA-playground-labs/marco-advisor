@@ -8,6 +8,7 @@
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "e2e:ui": "playwright test",
     "e2e:n8n": "node scripts/e2e-n8n-parser.mjs",
     "supabase:start": "supabase start",
     "supabase:stop": "supabase stop",
@@ -33,6 +34,7 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "@types/node": "^22.10.5",
     "@types/react": "^19.0.4",
     "@types/react-dom": "^19.0.2",

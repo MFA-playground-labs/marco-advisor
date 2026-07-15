@@ -15,9 +15,13 @@ vi.mock("@/lib/server/supabase-repository", () => ({
   createSupabaseRepository: mocks.createSupabaseRepository
 }));
 
-vi.mock("@/lib/server/trip-selection", () => ({
-  getSelectedTripId: mocks.getSelectedTripId
-}));
+vi.mock("@/lib/server/trip-selection", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/server/trip-selection")>();
+  return {
+    ...actual,
+    getSelectedTripId: mocks.getSelectedTripId
+  };
+});
 
 vi.mock("@/lib/server/workflows/upload-evidence", () => ({
   uploadEvidence: mocks.uploadEvidence
@@ -54,7 +58,7 @@ describe("POST /api/upload", () => {
     formData.set("file", new File(["pdf"], "booking.pdf", { type: "application/pdf" }));
     formData.set("tripName", "Paris");
     const result = {
-      upload: { id: "upload-1" },
+      upload: { id: "upload-1", trip_id: "trip-selected" },
       job: { id: "job-1" },
       dispatched: true
     };
@@ -88,6 +92,7 @@ describe("POST /api/upload", () => {
         size_bytes: 3
       })
     );
+    expect(response.headers.get("set-cookie")).toContain("marco_selected_trip_id=trip-selected");
   });
 
   it("logs missing files as validation failures", async () => {

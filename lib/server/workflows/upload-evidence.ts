@@ -90,6 +90,9 @@ export async function uploadEvidence(input: UploadEvidenceInput, deps: UploadEvi
   let trip = input.tripId
     ? await repo.getTripForOwner(user.id, input.tripId)
     : await repo.getActiveTrip(user.id);
+  if (!trip && input.tripId) {
+    trip = await repo.getActiveTrip(user.id);
+  }
 
   if (!trip) {
     trip = await repo.createTrip({
